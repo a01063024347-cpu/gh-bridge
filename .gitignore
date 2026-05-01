@@ -1,0 +1,13 @@
+bin/
+obj/
+backup/
+backup_v2/
+backup_v3/
+backup_v4/
+*.user
+*.suo
+.vs/
+port.txt
+BuildLeaf.txt
+BuildLeafNew.txt
+connect_method.txt
