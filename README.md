@@ -2,7 +2,7 @@
 
 **AI Agent 驱动的 Grasshopper 桥接插件 — 让大语言模型直接在 GH 画布上生成、连线、求解电池组。**
 
-gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP 服务端。AI Agent 通过 17 个 RESTful 指令动态创建组件、连线、布位、触发求解，实现从自然语言到参数化模型的全自动链路。
+gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP 服务端。AI Agent 通过 18 个 RESTful 指令动态创建组件、连线、布位、触发求解，实现从自然语言到参数化模型的全自动链路。
 
 配合 Rhino.Inside.Revit（RIR），可将生成的几何直接推入 Revit 文档。
 
