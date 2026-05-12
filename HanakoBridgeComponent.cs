@@ -889,5 +889,65 @@ namespace HanakoBridge
                 });
             } catch (Exception ex) { return "scene err:" + ex.Message; }
         }
+
+        string DoDescribe() {
+            try {
+                DoBake();
+                var rDoc = Rhino.RhinoDoc.ActiveDoc;
+                if (rDoc == null) return _json.Serialize(new { error = "no rhino doc" });
+                var results = new List<object>();
+                foreach (var obj in rDoc.Objects) {
+                    var geo = obj.Geometry;
+                    if (geo == null) continue;
+                    var d = new Dictionary<string, object>();
+                    d["type"] = geo.GetType().Name;
+                    var bb = geo.GetBoundingBox(true);
+                    if (bb.IsValid) {
+                        double dx = bb.Max.X - bb.Min.X, dy = bb.Max.Y - bb.Min.Y, dz = bb.Max.Z - bb.Min.Z;
+                        d["size"] = new double[] { Math.Round(dx,2), Math.Round(dy,2), Math.Round(dz,2) };
+                        double maxD = Math.Max(dx, Math.Max(dy, dz));
+                        double minD = Math.Min(dx, Math.Min(dy, dz));
+                        if (maxD > minD * 5) d["shape"] = "细长/管状";
+                        else if (maxD < minD * 1.5) d["shape"] = "块状/近立方体";
+                        else d["shape"] = "扁平/片状";
+                        if (maxD > 0.1) {
+                            int mainAxis = dx >= dy && dx >= dz ? 0 : (dy >= dz ? 1 : 2);
+                            double[] dims = {dx,dy,dz};
+                            int samples = Math.Min(10, Math.Max(3, (int)(dims[mainAxis] / 0.5)));
+                            var radii = new List<double>();
+                            for (int s = 0; s <= samples; s++)
+                                radii.Add(Math.Round(Math.Sqrt(dims[(mainAxis+1)%3] * dims[(mainAxis+2)%3] / Math.PI) / 2, 3));
+                            if (radii.Count >= 3 && radii.Average() > 0.001) {
+                                double rf = radii[0], rm = radii[radii.Count/2], rl = radii[radii.Count-1], avg = radii.Average();
+                                if (Math.Abs(rf-rl) < avg*0.1) d["taper"] = "等径";
+                                else if (rm > rf*1.2 && rm > rl*1.2) d["taper"] = "中间粗两端细";
+                                else if (rf < rl) d["taper"] = "渐粗（单向）";
+                                else d["taper"] = "渐细（单向）";
+                                d["radius_range"] = new double[] { radii.Min(), radii.Max() };
+                            }
+                        }
+                    }
+                    if (geo is Rhino.Geometry.Brep) try { d["volume"] = Math.Round(((Rhino.Geometry.Brep)geo).GetVolume(),4); } catch {}
+                    if (geo is Rhino.Geometry.Mesh) { try { d["vertices"] = ((Rhino.Geometry.Mesh)geo).Vertices.Count; } catch {} try { d["faces"] = ((Rhino.Geometry.Mesh)geo).Faces.Count; } catch {} }
+                    if (geo is Rhino.Geometry.Curve) try { d["length"] = Math.Round(((Rhino.Geometry.Curve)geo).GetLength(),2); } catch {}
+                    results.Add(d);
+                }
+                return _json.Serialize(new { total = results.Count, results });
+            } catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
+        }
+
+        string DoScreenshot() {
+            try {
+                var rDoc = Rhino.RhinoDoc.ActiveDoc;
+                if (rDoc == null) return _json.Serialize(new { error = "no rhino doc" });
+                var v = rDoc.Views.ActiveView;
+                if (v == null) return _json.Serialize(new { error = "no view" });
+                var bmp = v.CaptureToBitmap();
+                if (bmp == null) return _json.Serialize(new { error = "capture failed" });
+                string p = "D:/agents/-A-hanako/screenshot.png";
+                bmp.Save(p, System.Drawing.Imaging.ImageFormat.Png);
+                return _json.Serialize(new { ok = true, path = p, width = bmp.Width, height = bmp.Height });
+            } catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
+        }
     }
 }
