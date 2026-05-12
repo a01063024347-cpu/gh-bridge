@@ -792,31 +792,27 @@ namespace HanakoBridge
                 // 遍历连线收集依赖
                 foreach (var obj in comps) {
                     try {
-                        // 用输入口的 Sources 回溯依赖（比 Recipients 更可靠，解算前也有值）
-                        var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
-                        if (p == null) {
-                            if (obj is IGH_Param) {
-                                var self2 = (IGH_Param)obj;
-                                if (self2.SourceCount > 0) {
-                                    string myId2 = idMap[obj.InstanceGuid];
-                                    for (int s = 0; s < self2.SourceCount; s++) {
-                                        var src = self2.Sources[s];
-                                        foreach (var o2 in comps) {
-                                            try {
-                                                var pp = o2.GetType().GetProperty("Params").GetValue(o2, null);
-                                                if (pp != null) { dynamic dpp = pp; var ol = (IList)dpp.Output;
-                                                    if (ol != null) for (int oj = 0; oj < ol.Count; oj++)
-                                                        if (((IGH_Param)ol[oj]).InstanceGuid == src.InstanceGuid)
-                                                            deps[myId2].Add(idMap[o2.InstanceGuid]);
-                                                } else if (o2 is IGH_Param && o2.InstanceGuid == src.InstanceGuid)
-                                                    deps[myId2].Add(idMap[o2.InstanceGuid]);
-                                            } catch { }
+                        string myId = idMap[obj.InstanceGuid];
+                        // 方法1：遍历所有输入口的 Sources
+                        if (obj is IGH_Param) {
+                            var self = (IGH_Param)obj;
+                            for (int s = 0; s < self.SourceCount; s++) {
+                                var srcGuid = self.Sources[s].InstanceGuid;
+                                foreach (var o2 in comps) {
+                                    try {
+                                        if (o2.InstanceGuid == srcGuid) { deps[myId].Add(idMap[o2.InstanceGuid]); break; }
+                                        var pp = o2.GetType().GetProperty("Params").GetValue(o2, null);
+                                        if (pp != null) { dynamic dpp = pp; var ol = (IList)dpp.Output;
+                                            if (ol != null) for (int oj = 0; oj < ol.Count; oj++)
+                                                if (((IGH_Param)ol[oj]).InstanceGuid == srcGuid)
+                                                    { deps[myId].Add(idMap[o2.InstanceGuid]); break; }
                                         }
-                                    }
+                                    } catch { }
                                 }
                             }
-                            continue;
                         }
+                        var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
+                        if (p == null) continue;
                         dynamic dp = p;
                         var il = (IList)dp.Input;
                         if (il == null) continue;
