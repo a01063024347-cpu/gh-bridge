@@ -462,7 +462,7 @@ namespace HanakoBridge
                 else {
                     var deps = new Dictionary<string, List<string>>();
                     foreach (var kv in created) deps[kv.Key] = new List<string>();
-                    if (def.ContainsKey("wires")) { var wl4 = (ArrayList)def["wires"]; foreach (var w in wl4) { var wl2 = (IList)w; string fid = (string)wl2[0]; string tid = (string)wl2[2]; if (deps.ContainsKey(tid)) deps[tid].Add(fid); } }
+                    if (def.ContainsKey("wires")) { var wl4 = (ArrayList)def["wires"]; foreach (var w in wl4) { if (w is string) continue; var wl2 = (IList)w; string fid = (string)wl2[0]; string tid = (string)wl2[2]; if (deps.ContainsKey(tid)) deps[tid].Add(fid); } }
                     var depth = new Dictionary<string, int>(); int maxDepth = 0; bool changed = true;
                     while (changed) { changed = false; foreach (var id2 in created.Keys) { int maxDep = 0; bool ak = true; foreach (var dep in deps[id2]) { if (depth.ContainsKey(dep)) maxDep = Math.Max(maxDep, depth[dep] + 1); else if (created.ContainsKey(dep)) { ak = false; break; } } if (ak && (!depth.ContainsKey(id2) || depth[id2] != maxDep)) { depth[id2] = maxDep; if (maxDep > maxDepth) maxDepth = maxDep; changed = true; } } }
                     var cr = new Dictionary<int, int>(); var ir = new Dictionary<string, int>();
