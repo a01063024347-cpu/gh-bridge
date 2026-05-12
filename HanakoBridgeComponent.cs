@@ -32,6 +32,7 @@ namespace HanakoBridge
         private static Dictionary<string, Guid> _idMap = new Dictionary<string, Guid>();
 
         private static GH_Document _ghDoc;
+        private static bool _lastTidyToggle;
         private static volatile bool _solving;
         private static DateTime _solveStart;
         private static readonly object _cmdLock = new object();
@@ -40,11 +41,21 @@ namespace HanakoBridge
         public override Guid ComponentGuid { get { return new Guid("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"); } }
         protected override Bitmap Icon { get { return null; } }
         public override GH_Exposure Exposure { get { return GH_Exposure.primary; } }
-        protected override void RegisterInputParams(GH_InputParamManager pM) { }
+        protected override void RegisterInputParams(GH_InputParamManager pM) { pM.AddBooleanParameter("Tidy", "T", "整理画布", GH_ParamAccess.item); }
         protected override void RegisterOutputParams(GH_OutputParamManager pM) { pM.AddTextParameter("S", "S", "", GH_ParamAccess.item); }
 
         protected override void SolveInstance(IGH_DataAccess DA) {
             _ghDoc = OnPingDocument();
+            // 整理按钮：拨动布尔开关触发
+            bool tidyToggle = false;
+            DA.GetData(0, ref tidyToggle);
+            if (tidyToggle && !_lastTidyToggle) {
+                _lastTidyToggle = true;
+                _lastStatus = DoTidy();
+                DA.SetData(0, _lastStatus);
+                return;
+            }
+            _lastTidyToggle = tidyToggle;
             var cmd = Interlocked.Exchange(ref _pendingCmd, null);
             if (cmd != null) {
                 _solving = true;
