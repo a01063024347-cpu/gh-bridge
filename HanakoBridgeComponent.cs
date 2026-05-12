@@ -50,8 +50,16 @@ namespace HanakoBridge
                 _lastStatus = DoTidy();
                 try {
                     var cv = Grasshopper.Instances.ActiveCanvas;
-                    if (cv != null) { var d = cv.Document; if (d != null) d.NewSolution(false); }
+                    if (cv != null) {
+                        var d = cv.Document;
+                        if (d != null) {
+                            d.ExpireSolution();
+                            d.ScheduleSolution(1);
+                        }
+                        cv.Refresh();
+                    }
                 } catch { }
+                ExpireSolution(true);
             });
         }
 
