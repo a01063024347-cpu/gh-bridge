@@ -87,6 +87,14 @@ namespace HanakoBridge
                             case "wire":             return DoWire(body);
                             case "verify":             return DoVerify(body);
                             case "diag":              return DoDiag();
+                            case "diagnose":          return DoDiagnose();
+                            case "query":           return DoQuery(body);
+                            case "loadgh":          return DoLoadGH(body);
+                            case "set":             return DoSet(body);
+                            case "gettype":          return DoGetType(body);
+                            case "values":           return DoValues();
+                            case "createpanel":       return DoCreatePanel(body);
+                            case "geomcheck":        return DoGeomCheck();
                             case "cancel":           return "{\"ok\":true,\"action\":\"cancel\"}";
                             case "describe":         return DoDescribe();
                             case "screenshot":       return DoScreenshot();
@@ -110,6 +118,14 @@ namespace HanakoBridge
                 if (body.Contains("\"scene\"")) return DoScene();
                 if (body.Contains("\"bake\"")) return DoBake();
                 if (body.Contains("\"diag\"")) return DoDiag();
+                if (body.Contains("\"diagnose\"")) return DoDiagnose();
+                if (body.Contains("\"query\"")) return DoQuery();
+                if (body.Contains("\"loadgh\"")) return DoLoadgh();
+                if (body.Contains("\"set\"")) return DoSet();
+                if (body.Contains("\"gettype\"")) return DoGettype();
+                if (body.Contains("\"values\"")) return DoValues();
+                if (body.Contains("\"createpanel\"")) return DoCreatepanel();
+                if (body.Contains("\"geomcheck\"")) return DoGeomcheck();
                 if (body.Contains("\"build\"")) return DoBuild(body);
                 if (body.Contains("\"describe\"")) return DoDescribe();
                 if (body.Contains("\"describe\"")) return DoDescribe();
@@ -1170,6 +1186,566 @@ namespace HanakoBridge
             }
             catch { }
             return -1;
+        }
+
+
+        string DoQuery(string body) {
+            try {
+                var rhinoDoc = Rhino.RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null) return "{\"error\":\"no rhino doc\"}";
+                var objs = rhinoDoc.Objects;
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\"objects\":[");
+                int i = 0;
+                foreach (var obj in objs) {
+                    try {
+                        var geo = obj.Geometry;
+                        if (geo == null) continue;
+                        string type = geo.GetType().Name;
+                        var bbox = geo.GetBoundingBox(true);
+                        bool valid = geo.IsValid;
+                        if (i > 0) sb.Append(",");
+                        sb.Append("{\"type\":\"" + type + "\"");
+                        sb.Append(",\"valid\":" + valid.ToString().ToLower());
+                        sb.Append(",\"bbox\":[" +
+                            Math.Round(bbox.Min.X,1) + "," + Math.Round(bbox.Min.Y,1) + "," + Math.Round(bbox.Min.Z,1) + "," +
+                            Math.Round(bbox.Max.X,1) + "," + Math.Round(bbox.Max.Y,1) + "," + Math.Round(bbox.Max.Z,1) + "]");
+                        sb.Append(",\"dim\":[" + Math.Round(bbox.Max.X - bbox.Min.X,1) + "," + Math.Round(bbox.Max.Y - bbox.Min.Y,1) + "," + Math.Round(bbox.Max.Z - bbox.Min.Z,1) + "]}");
+                        i++;
+                    } catch { }
+                }
+                sb.Append("],\"count\":" + i + "}");
+                return sb.ToString();
+            } catch (Exception ex) { return "{\"error\":\"" + ex.Message + "\"}"; }
+        }
+
+// ==== LOADGH ====
+        string DoLoadGH(string body) {
+            try {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                if (def == null || !def.ContainsKey("path")) return "{\"error\":\"need path\"}";
+                string path = (string)def["path"];
+                if (!File.Exists(path)) return "{\"error\":\"file not found\"}";
+
+                var bytes = File.ReadAllBytes(path);
+                var text = System.Text.Encoding.Unicode.GetString(bytes);
+
+                var assemblies = new Dictionary<string, int>();
+                int pos = 0;
+                while (pos < text.Length) {
+                    int found = text.IndexOf(".dll", pos, StringComparison.OrdinalIgnoreCase);
+                    if (found < 0) break;
+                    int start = found - 1;
+                    while (start >= 0 && (char.IsLetterOrDigit(text[start]) || text[start] == '_' || text[start] == '.')) start--;
+                    start++;
+                    string name = text.Substring(start, found - start);
+                    if (name.Length > 2 && !name.Contains("\\")) {
+                        if (assemblies.ContainsKey(name)) assemblies[name]++;
+                        else assemblies[name] = 1;
+                    }
+                    pos = found + 4;
+                }
+                pos = 0;
+                while (pos < text.Length) {
+                    int found = text.IndexOf(".gha", pos, StringComparison.OrdinalIgnoreCase);
+                    if (found < 0) break;
+                    int start = found - 1;
+                    while (start >= 0 && (char.IsLetterOrDigit(text[start]) || text[start] == '_' || text[start] == '.')) start--;
+                    start++;
+                    string name = text.Substring(start, found - start);
+                    if (name.Length > 2 && !name.Contains("\\")) {
+                        if (assemblies.ContainsKey(name)) assemblies[name]++;
+                        else assemblies[name] = 1;
+                    }
+                    pos = found + 4;
+                }
+
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\"file\":\"" + Path.GetFileName(path) + "\"");
+                sb.Append(",\"assemblies\":[");
+                bool first = true;
+                foreach (var kv in assemblies) {
+                    if (!first) sb.Append(",");
+                    sb.Append("{\"name\":\"" + kv.Key + "\",\"count\":" + kv.Value + "}");
+                    first = false;
+                }
+                sb.Append("]}");
+                return sb.ToString();
+            } catch (Exception ex) { return "{\"error\":\"" + ex.Message + "\"}"; }
+        }
+
+// ==== DIAGNOSE ====
+        string DoDiagnose() {
+            var doc = _ghDoc;
+            if (doc == null) return _json.Serialize(new { error = "no doc" });
+            try {
+                // 先触发一次求解，确保几何体是最新的
+                try { doc.NewSolution(false); } catch { }
+
+                var problems = new List<object>();
+                int healthyComps = 0, problemComps = 0;
+
+                foreach (var obj in doc.Objects) {
+                    if (obj is HanakoBridgeComponent) continue;
+
+                    string compName = obj.GetType().Name;
+                    string nickName = "";
+                    try { dynamic d = obj; nickName = d.NickName ?? ""; } catch { }
+                    string guidPrefix = obj.InstanceGuid.ToString().Substring(0, 8);
+                    int pivotX = 0, pivotY = 0;
+                    try { dynamic d = obj; pivotX = (int)d.Attributes.Pivot.X; pivotY = (int)d.Attributes.Pivot.Y; } catch { }
+
+                    bool hasProblem = false;
+                    var issues = new List<object>();
+
+                    try {
+                        var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
+                        if (p == null) continue;
+                        dynamic dp = p;
+                        var outs = (IList)dp.Output;
+                        if (outs == null) continue;
+
+                        for (int i = 0; i < outs.Count; i++) {
+                            try {
+                                var ghOut = (IGH_Param)outs[i];
+                                string outName = "";
+                                try { outName = ghOut.NickName ?? ""; } catch { }
+                                string outType = ghOut.TypeName ?? "";
+
+                                var data = ghOut.VolatileData;
+                                if (data == null || data.IsEmpty) {
+                                    // 输出为空 — 可能还没求解或输入缺失
+                                    // 只有非空输入但空输出才算问题
+                                    bool hasInput = false;
+                                    try {
+                                        var ins = (IList)dp.Input;
+                                        if (ins != null) {
+                                            for (int j = 0; j < ins.Count; j++) {
+                                                try { if (((IGH_Param)ins[j]).SourceCount > 0) { hasInput = true; break; } } catch { }
+                                            }
+                                        }
+                                    } catch { }
+                                    if (hasInput) {
+                                        hasProblem = true;
+                                        issues.Add(new { output = i, name = outName, type = outType, problem = "empty_output", detail = "有输入但输出为空" });
+                                    }
+                                    continue;
+                                }
+
+                                // 检查每条数据
+                                int itemIdx = 0;
+                                foreach (var item in data.AllData(true)) {
+                                    try {
+                                        if (item == null) {
+                                            hasProblem = true;
+                                            issues.Add(new { output = i, name = outName, item = itemIdx, problem = "null_item", detail = "数据项为 null" });
+                                            itemIdx++;
+                                            continue;
+                                        }
+
+                                        var valProp = item.GetType().GetProperty("Value");
+                                        if (valProp == null) { itemIdx++; continue; }
+                                        var val = valProp.GetValue(item, null);
+                                        if (val == null) {
+                                            hasProblem = true;
+                                            issues.Add(new { output = i, name = outName, item = itemIdx, problem = "null_value", detail = "Value 为 null" });
+                                            itemIdx++;
+                                            continue;
+                                        }
+
+                                        // 根据类型检查退化
+                                        string typeName = val.GetType().Name;
+
+                                        if (val is Rhino.Geometry.Point3d) {
+                                            var pt = (Rhino.Geometry.Point3d)val;
+                                            if (pt.X == 0 && pt.Y == 0 && pt.Z == 0) {
+                                                // 点在原点 — 可能是未初始化，标记为可疑
+                                                // 不直接报错，因为原点可能是合法的
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Point3f) {
+                                            var pt = (Rhino.Geometry.Point3f)val;
+                                            if (pt.X == 0 && pt.Y == 0 && pt.Z == 0) {
+                                                // 同上
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Curve) {
+                                            var crv = (Rhino.Geometry.Curve)val;
+                                            if (crv.GetLength() < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_length_curve", detail = "曲线长度=" + crv.GetLength().ToString("E2"), length = Math.Round(crv.GetLength(), 6) });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Surface) {
+                                            var srf = (Rhino.Geometry.Surface)val;
+                                            var mass = Rhino.Geometry.AreaMassProperties.Compute(srf);
+                                            if (mass == null || mass.Area < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_area_surface", detail = "面积=" + (mass?.Area.ToString("E2") ?? "null") });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Brep) {
+                                            var brep = (Rhino.Geometry.Brep)val;
+                                            var mass = Rhino.Geometry.AreaMassProperties.Compute(brep);
+                                            if (mass == null || mass.Area < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_area_brep", detail = "Brep 面积=" + (mass?.Area.ToString("E2") ?? "null") });
+                                            }
+                                            if (brep.Faces.Count == 0) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "empty_brep", detail = "Brep 无面" });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Mesh) {
+                                            var mesh = (Rhino.Geometry.Mesh)val;
+                                            if (mesh.Faces.Count == 0) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "empty_mesh", detail = "Mesh 无面" });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Line) {
+                                            var line = (Rhino.Geometry.Line)val;
+                                            if (line.Length < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_length_line", detail = "线段长度=" + line.Length.ToString("E2") });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Circle) {
+                                            var circ = (Rhino.Geometry.Circle)val;
+                                            if (circ.Radius < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_radius_circle", detail = "圆半径=" + circ.Radius.ToString("E2") });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Plane) {
+                                            // 退化平面：法向量为零
+                                            var pl = (Rhino.Geometry.Plane)val;
+                                            if (pl.ZAxis.Length < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "degenerate_plane", detail = "平面法向量退化" });
+                                            }
+                                        }
+                                    } catch { }
+                                    itemIdx++;
+                                }
+                            } catch { }
+                        }
+                    } catch { }
+
+                    if (hasProblem) {
+                        problemComps++;
+                        problems.Add(new {
+                            component = compName,
+                            nickname = nickName,
+                            guid = guidPrefix,
+                            position = new { x = pivotX, y = pivotY },
+                            issues
+                        });
+                    } else {
+                        healthyComps++;
+                    }
+                }
+
+                return _json.Serialize(new {
+                    result = "diagnose",
+                    totalComponents = problemComps + healthyComps,
+                    healthy = healthyComps,
+                    problems = problemComps,
+                    details = problems
+                });
+            } catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
+        }
+
+// body: {"action":"set", "id":"branch1", "param":"P", "value":[0,1], "type":"path"}
+        string DoSet(string body) {
+            try {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                if (def == null) return "need json";
+                
+                string id = def.ContainsKey("id") ? (string)def["id"] : "";
+                string guid = def.ContainsKey("guid") ? (string)def["guid"] : "";
+                string paramName = def.ContainsKey("param") ? (string)def["param"] : "";
+                string valType = def.ContainsKey("type") ? (string)def["type"] : "";
+                
+                if (string.IsNullOrEmpty(id) && string.IsNullOrEmpty(guid)) return "need id or guid";
+                
+                // 找组件
+                var doc = OnPingDocument();
+                if (doc == null) return "no doc";
+                
+                IGH_DocumentObject targetObj = null;
+                if (!string.IsNullOrEmpty(id) && _idMap.ContainsKey(id)) {
+                    foreach (var obj in doc.Objects) {
+                        try { if (obj.InstanceGuid == _idMap[id]) { targetObj = obj; break; } } catch { }
+                    }
+                }
+                if (targetObj == null && !string.IsNullOrEmpty(guid)) {
+                    foreach (var obj in doc.Objects) {
+                        try { if (obj.InstanceGuid.ToString().StartsWith(guid)) { targetObj = obj; break; } } catch { }
+                    }
+                }
+                if (targetObj == null) return "not found";
+                
+                // 找输入参数
+                var paramsProp = targetObj.GetType().GetProperty("Params");
+                if (paramsProp == null) return "no params";
+                dynamic p = paramsProp.GetValue(targetObj, null);
+                IGH_Param targetParam = null;
+                int paramIdx = -1;
+                
+                // 先按名称匹配
+                if (!string.IsNullOrEmpty(paramName)) {
+                    for (int i = 0; i < p.Input.Count; i++) {
+                        string nick = p.Input[i].NickName ?? "";
+                        if (nick == paramName) { targetParam = p.Input[i]; paramIdx = i; break; }
+                    }
+                }
+                // 如果名称没匹配到，尝试按端口号
+                if (targetParam == null && def.ContainsKey("port")) {
+                    int port = Convert.ToInt32(def["port"]);
+                    if (port >= 0 && port < p.Input.Count) {
+                        targetParam = p.Input[port];
+                        paramIdx = port;
+                    }
+                }
+                if (targetParam == null) {
+                    // 没找到指定输入，尝试第一个
+                    if (p.Input.Count > 0) {
+                        targetParam = p.Input[0];
+                        paramIdx = 0;
+                    }
+                }
+                if (targetParam == null) return "no matching param found";
+                
+                dynamic dParam = targetParam;
+                
+                // 根据类型设置值
+                try { dParam.PersistentData.Clear(); } catch { }
+                
+                if (valType == "path" && def.ContainsKey("value")) {
+                    var arr = (ArrayList)def["value"];
+                    int[] indices = new int[arr.Count];
+                    for (int i = 0; i < arr.Count; i++) indices[i] = Convert.ToInt32(arr[i]);
+                    var path = new Grasshopper.Kernel.Data.GH_Path(indices);
+                    try {
+                        // 尝试用 GH_StructurePath
+                        dParam.PersistentData.Append(new Grasshopper.Kernel.Types.GH_StructurePath(path));
+                    } catch {
+                        try {
+                            // 尝试用 AddVolatileData
+                            dParam.AddVolatileData(new Grasshopper.Kernel.Data.GH_Path(0), 0, path);
+                        } catch {
+                            // 最后尝试直接设 string
+                            dParam.PersistentData.Append(new Grasshopper.Kernel.Types.GH_String(path.ToString()));
+                        }
+                    }
+                }
+                else if (valType == "bool" && def.ContainsKey("value")) {
+                    bool v = Convert.ToBoolean(def["value"]);
+                    dParam.PersistentData.Append(new Grasshopper.Kernel.Types.GH_Boolean(v));
+                }
+                else if (valType == "int" && def.ContainsKey("value")) {
+                    int v = Convert.ToInt32(def["value"]);
+                    dParam.PersistentData.Append(new Grasshopper.Kernel.Types.GH_Integer(v));
+                }
+                else if (valType == "number" && def.ContainsKey("value")) {
+                    double v = Convert.ToDouble(def["value"]);
+                    dParam.PersistentData.Append(new Grasshopper.Kernel.Types.GH_Number(v));
+                }
+                else if (valType == "text" && def.ContainsKey("value")) {
+                    string v = (string)def["value"];
+                    dParam.PersistentData.Append(new Grasshopper.Kernel.Types.GH_String(v));
+                }
+                else if (valType == "domain" && def.ContainsKey("value")) {
+                    var arr = (ArrayList)def["value"];
+                    double d0 = Convert.ToDouble(arr[0]);
+                    double d1 = Convert.ToDouble(arr[1]);
+                    var itv = new Rhino.Geometry.Interval(d0, d1);
+                    dParam.PersistentData.Append(new Grasshopper.Kernel.Types.GH_Interval(itv));
+                }
+                
+                return "set:" + targetObj.GetType().Name + "." + paramName + "=" + (def.ContainsKey("value") ? def["value"].ToString() : "?");
+            } catch (Exception ex) { return "set err:" + ex.Message; }
+        }
+
+// body: {"action":"gettype", "guid":"3865f2de"}
+        string DoGetType(string body) {
+            try {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                if (def == null) return "need json";
+                
+                string guid = def.ContainsKey("guid") ? (string)def["guid"] : "";
+                if (string.IsNullOrEmpty(guid)) return "need guid";
+                
+                var doc = OnPingDocument();
+                if (doc == null) return "no doc";
+                
+                foreach (var obj in doc.Objects) {
+                    string ig = obj.InstanceGuid.ToString();
+                    if (ig.StartsWith(guid)) {
+                        Guid typeGuid = obj.ComponentGuid;
+                        string name = "?";
+                        try { name = obj.GetType().Name; } catch { }
+                        string nick = "?";
+                        try { nick = obj.NickName; } catch { }
+                        return _json.Serialize(new {
+                            instanceGuid = ig,
+                            componentGuid = typeGuid.ToString(),
+                            typeGuid8 = typeGuid.ToString().Substring(0, 8),
+                            name,
+                            nick
+                        });
+                    }
+                }
+                return "not found";
+            } catch (Exception ex) { return "gettype err:" + ex.Message; }
+        }
+
+// body: {"action":"gettype", "guid":"3865f2de"}
+
+        string DoValues() {
+            var doc = _ghDoc;
+            if (doc == null) return "no doc";
+            try {
+                // 收集：对每个组件的每个输入，记录其来源的父对象 GUID → 目标信息
+                var sourceTargets = new Dictionary<Guid, List<Tuple<string, string>>>();
+                var debugLog = new List<string>();
+                foreach (var comp in doc.Objects) {
+                    try {
+                        var p = comp.GetType().GetProperty("Params").GetValue(comp, null);
+                        if (p == null) continue;
+                        dynamic dp = p;
+                        var inputList = (IList)dp.Input;
+                        if (inputList == null) continue;
+                        string compName = "?";
+                        try { compName = comp.NickName ?? comp.GetType().Name; } catch { }
+                        for (int i = 0; i < inputList.Count; i++) {
+                            var pIn = (IGH_Param)inputList[i];
+                            if (pIn.Sources == null || pIn.SourceCount == 0) continue;
+                            string portName = pIn.NickName ?? "?";
+                            foreach (var src in pIn.Sources) {
+                                try {
+                                    // 方法1: Attributes.Parent
+                                    IGH_DocumentObject parent = null;
+                                    try { parent = src.Attributes?.DocObject; } catch { }
+                                    // 方法2: 如果 Parent 为空，尝试用 OnPingDocument 找
+                                    if (parent == null) {
+                                        try {
+                                            // 直接比较 src 是否是 doc.Objects 中的某个
+                                            var srcGuid = src.InstanceGuid;
+                                            foreach (var o in doc.Objects) {
+                                                if (o.InstanceGuid == srcGuid) { parent = o; break; }
+                                                // 也检查 o 的 output Params 是否有匹配的
+                                                try {
+                                                    var po = o.GetType().GetProperty("Params").GetValue(o, null);
+                                                    if (po != null) {
+                                                        dynamic dpo = po;
+                                                        var ol = (IList)dpo.Output;
+                                                        if (ol != null) {
+                                                            for (int j = 0; j < ol.Count; j++) {
+                                                                if (((IGH_Param)ol[j]).InstanceGuid == srcGuid) {
+                                                                    parent = o; break;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } catch { }
+                                                if (parent != null) break;
+                                            }
+                                        } catch { }
+                                    }
+                                    if (parent == null) {
+                                        debugLog.Add($"no parent for src from {compName}.{portName}");
+                                        continue;
+                                    }
+                                    var parentGuid = parent.InstanceGuid;
+                                    if (!sourceTargets.ContainsKey(parentGuid))
+                                        sourceTargets[parentGuid] = new List<Tuple<string, string>>();
+                                    sourceTargets[parentGuid].Add(Tuple.Create(compName, portName));
+                                } catch (Exception ex2) { debugLog.Add($"err:{ex2.Message}"); }
+                            }
+                        }
+                    } catch { }
+                }
+                var result = new List<object>();
+                foreach (var obj in doc.Objects) {
+                    string name = "?";
+                    try { name = obj.NickName ?? obj.GetType().Name; } catch { name = obj.GetType().Name; }
+                    string val = null;
+                    string typeName = "?";
+                    try { typeName = obj.GetType().Name; } catch { }
+                    try {
+                        dynamic d = obj;
+                        try { var v = d.Value; if (v != null) val = v.ToString(); } catch { }
+                        if (val == null) { try { var cv = d.CurrentValue; if (cv != null) val = cv.ToString(); } catch { } }
+                        if (val == null) { try { val = d.UserText; } catch { } }
+                        if (val == null) { try { if (d.PersistentData != null && d.PersistentData.DataCount > 0) val = d.PersistentData.get_Item(0).ToString(); } catch { } }
+                    } catch { }
+                    string guid = "";
+                    try { guid = obj.InstanceGuid.ToString().Substring(0, 8); } catch { }
+                    // 查找这个对象连到了哪些组件的哪个输入
+                    var connectsTo = new List<object>();
+                    if (sourceTargets.ContainsKey(obj.InstanceGuid)) {
+                        foreach (var tgt in sourceTargets[obj.InstanceGuid]) {
+                            connectsTo.Add(new { to = tgt.Item1, port = tgt.Item2 });
+                        }
+                    }
+                    result.Add(new { name, type = typeName, value = val, guid, connects = connectsTo });
+                }
+                return _json.Serialize(new { count = result.Count, items = result, debug = debugLog });
+            } catch (Exception ex) { return "values err:" + ex.Message; }
+        }
+
+// body: {"action":"gettype", "guid":"3865f2de"}
+
+
+        string DoCreatePanel(string body) {
+            try {
+                var doc = _ghDoc;
+                if (doc == null) return "no doc";
+                
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                string text = ""; string name = "";
+                if (def != null) {
+                    try { text = (string)def["text"]; } catch { }
+                    try { name = (string)def["name"]; } catch { }
+                }
+                
+                Grasshopper.Kernel.Special.GH_Panel panel = null;
+                try { panel = new Grasshopper.Kernel.Special.GH_Panel(); } catch (Exception ex) { return "step1:" + ex.Message; }
+                try { panel.UserText = text ?? ""; } catch (Exception ex) { return "step2:" + ex.Message; }
+                try { if (!string.IsNullOrEmpty(name)) panel.NickName = name; } catch (Exception ex) { return "step3:" + ex.Message; }
+                try { doc.AddObject(panel, false); } catch (Exception ex) { return "step4:" + ex.Message; }
+                
+                string guid = "";
+                try { guid = panel.InstanceGuid.ToString(); } catch { }
+                return _json.Serialize(new { ok = true, instanceGuid = guid, name, text });
+            } catch (Exception ex) { return "createpanel err:" + ex.Message; }
+        }
+
+        // ==== GEOMCHECK ====
+        string DoGeomCheck() {
+            var doc = _ghDoc; if (doc == null) return "no doc";
+            var problems = new List<object>();
+            try {
+                foreach (var obj in doc.Objects) {
+                    string name = "?"; try { name = obj.NickName ?? obj.GetType().Name; } catch { }
+                    try {
+                        var pi = obj.GetType().GetProperty("Params"); if (pi == null) continue;
+                        var pv = pi.GetValue(obj, null); if (pv == null) continue;
+                        dynamic dp = pv; var ol = (IList)dp.Output; if (ol == null) continue;
+                        for (int j = 0; j < ol.Count; j++) {
+                            var pOut = (IGH_Param)ol[j]; var vd = pOut.VolatileData; if (vd == null || vd.DataCount == 0) continue;
+                            for (int k = 0; k < vd.get_Branch(0).Count; k++) {
+                                var item = vd.get_Branch(0)[k]; if (item == null) continue;
+                                try { var crv = item as Rhino.Geometry.Curve; if (crv != null && crv.GetLength() < 0.001) problems.Add(new { comp = name, output = j, item = k, type = "Curve", issue = "zero_length" }); } catch { }
+                                try { var brep = item as Rhino.Geometry.Brep; if (brep != null && brep.IsValid && brep.GetVolume() < 0.0001) problems.Add(new { comp = name, output = j, item = k, type = "Brep", issue = "zero_volume" }); } catch { }
+                            }
+                        }
+                    } catch { }
+                }
+                return _json.Serialize(new { total = problems.Count, problems });
+            } catch (Exception ex) { return "geomcheck err:" + ex.Message; }
         }
     }
 }
