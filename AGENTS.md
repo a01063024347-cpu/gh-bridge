@@ -52,14 +52,14 @@ GitHub: `github.com/a01063024347-cpu/gh-bridge`
     {"id": "cir", "guid": "Circle"}
   ],
   "wires": [
-    ["r", "Number", "cir", "R"]
+    "r.Number->cir.R"
   ]
 }
 ```
 
 - `guid`: 支持 GUID 或组件名
 - `wait`: false = 异步（推荐）
-- `wires[1]` / `wires[3]`: 支持端口号或端口名
+- `wires`: 支持箭头语法 `"id.port->id.port"` 或传统数组 `["id",port,"id",port]`
 - `positions`: 可选，不设自动拓扑布局
 
 ## 工作流
