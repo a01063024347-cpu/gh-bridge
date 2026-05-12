@@ -48,7 +48,10 @@ namespace HanakoBridge
             Menu_AppendItem(menu, "整理画布", (sender, e) => {
                 _ghDoc = OnPingDocument();
                 _lastStatus = DoTidy();
-                ExpireSolution(true);
+                try {
+                    var cv = Grasshopper.Instances.ActiveCanvas;
+                    if (cv != null) { cv.Refresh(); cv.Invalidate(); }
+                } catch { }
             });
         }
 
