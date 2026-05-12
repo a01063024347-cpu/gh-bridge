@@ -775,123 +775,37 @@ namespace HanakoBridge
         string DoTidy() {
             var doc = _ghDoc; if (doc == null) return "no doc";
             try {
-                // 收集所有非桥组件
                 var comps = new List<IGH_DocumentObject>();
                 foreach (var obj in doc.Objects)
                     if (!(obj is HanakoBridgeComponent)) comps.Add(obj);
                 if (comps.Count == 0) return "tidy:0";
-                // 建实例→id映射和依赖关系
-                var idMap = new Dictionary<Guid, string>();
-                var deps = new Dictionary<string, List<string>>();
-                int idx = 0;
+                var items = new List<Tuple<IGH_DocumentObject, float, float>>();
                 foreach (var obj in comps) {
-                    string id = "c" + idx++;
-                    idMap[obj.InstanceGuid] = id;
-                    deps[id] = new List<string>();
+                    float x = 0, y = 0;
+                    try { x = obj.Attributes.Pivot.X; y = obj.Attributes.Pivot.Y; } catch { }
+                    items.Add(Tuple.Create(obj, x, y));
                 }
-                // 遍历连线收集依赖
-                foreach (var obj in comps) {
-                    try {
-                        string myId = idMap[obj.InstanceGuid];
-                        // 方法1：遍历所有输入口的 Sources
-                        if (obj is IGH_Param) {
-                            var self = (IGH_Param)obj;
-                            for (int s = 0; s < self.SourceCount; s++) {
-                                var srcGuid = self.Sources[s].InstanceGuid;
-                                foreach (var o2 in comps) {
-                                    try {
-                                        if (o2.InstanceGuid == srcGuid) { deps[myId].Add(idMap[o2.InstanceGuid]); break; }
-                                        var pp = o2.GetType().GetProperty("Params").GetValue(o2, null);
-                                        if (pp != null) { dynamic dpp = pp; var ol = (IList)dpp.Output;
-                                            if (ol != null) for (int oj = 0; oj < ol.Count; oj++)
-                                                if (((IGH_Param)ol[oj]).InstanceGuid == srcGuid)
-                                                    { deps[myId].Add(idMap[o2.InstanceGuid]); break; }
-                                        }
-                                    } catch { }
-                                }
-                            }
-                        }
-                        var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
-                        if (p == null) continue;
-                        dynamic dp = p;
-                        var il = (IList)dp.Input;
-                        if (il == null) continue;
-                        for (int i = 0; i < il.Count; i++) {
-                            var pi = (IGH_Param)il[i];
-                            if (pi.SourceCount == 0) continue;
-                            foreach (var src in pi.Sources) {
-                                foreach (var o2 in comps) {
-                                    try {
-                                        var pp = o2.GetType().GetProperty("Params").GetValue(o2, null);
-                                        if (pp != null) { dynamic dpp = pp; var ol = (IList)dpp.Output;
-                                            if (ol != null) for (int oj = 0; oj < ol.Count; oj++)
-                                                if (((IGH_Param)ol[oj]).InstanceGuid == src.InstanceGuid)
-                                                    deps[idMap[obj.InstanceGuid]].Add(idMap[o2.InstanceGuid]);
-                                        }
-                                    } catch { }
-                                }
-                            }
-                        }
-                    } catch { }
-                }
-                // 拓扑排序
-                var depth = new Dictionary<string, int>();
-                int maxDepth = 0; bool changed = true;
-                while (changed) {
-                    changed = false;
-                    foreach (var kv in idMap) {
-                        string id = kv.Value;
-                        int maxDep = 0; bool ak = true;
-                        foreach (var dep in deps[id]) {
-                            if (depth.ContainsKey(dep)) maxDep = Math.Max(maxDep, depth[dep] + 1);
-                            else if (deps.ContainsKey(dep)) { ak = false; break; }
-                        }
-                        if (ak && (!depth.ContainsKey(id) || depth[id] != maxDep)) {
-                            depth[id] = maxDep; if (maxDep > maxDepth) maxDepth = maxDep; changed = true;
-                        }
+                items.Sort((a, b) => a.Item2.CompareTo(b.Item2));
+                var cols = new List<List<Tuple<IGH_DocumentObject, float>>>();
+                var curCol = new List<Tuple<IGH_DocumentObject, float>>();
+                float lastX = float.MinValue;
+                foreach (var item in items) {
+                    if (curCol.Count > 0 && item.Item2 - lastX > 100f) {
+                        cols.Add(curCol);
+                        curCol = new List<Tuple<IGH_DocumentObject, float>>();
                     }
+                    curCol.Add(Tuple.Create(item.Item1, item.Item3));
+                    lastX = item.Item2;
                 }
-                // 按列/行排布
-                var cr = new Dictionary<int, int>();
-                var ir = new Dictionary<string, int>();
-                foreach (var kv in idMap) {
-                    string id = kv.Value;
-                    int d = depth.ContainsKey(id) ? depth[id] : maxDepth + 1;
-                    if (!cr.ContainsKey(d)) cr[d] = 0;
-                    ir[id] = cr[d]; cr[d]++;
-                }
-                int count = 0;
-                // 第一遍：按拓扑深度分配初始位置
-                foreach (var obj in comps) {
-                    string id = idMap[obj.InstanceGuid];
-                    int col = depth.ContainsKey(id) ? depth[id] : maxDepth + 1;
-                    int row = ir[id];
-                    float x = col * 250f + 50f;
-                    float y = row * 60f + 50f;
-                    try { dynamic d = obj; d.Attributes.Pivot = new PointF(x, y); count++; } catch { }
-                }
-                // 第二遍：检测重叠并调整——同列组件垂直间距不低于 50px
-                var cols = new Dictionary<int, List<Tuple<IGH_DocumentObject, float>>>();
-                foreach (var obj in comps) {
-                    string id = idMap[obj.InstanceGuid];
-                    int col = depth.ContainsKey(id) ? depth[id] : maxDepth + 1;
-                    if (!cols.ContainsKey(col)) cols[col] = new List<Tuple<IGH_DocumentObject, float>>();
-                    float y = 50f;
-                    try { y = obj.Attributes.Pivot.Y; } catch { }
-                    cols[col].Add(Tuple.Create(obj, y));
-                }
-                foreach (var kv in cols) {
-                    var items = kv.Value.OrderBy(t => t.Item2).ToList();
+                if (curCol.Count > 0) cols.Add(curCol);
+                int count = 0; float colX = 50f;
+                foreach (var col in cols) {
                     float curY = 50f;
-                    foreach (var item in items) {
-                        float objH = 80f; // 估算组件高度
-                        try {
-                            var b = item.Item1.Attributes.Bounds;
-                            objH = Math.Max(60f, b.Height);
-                        } catch { }
-                        try { dynamic d = item.Item1; d.Attributes.Pivot = new PointF(item.Item1.Attributes.Pivot.X, curY); } catch { }
-                        curY += objH + 30f; // 每组件间距 30px
+                    foreach (var item in col) {
+                        try { dynamic d = item.Item1; d.Attributes.Pivot = new PointF(colX, curY); count++; } catch { }
+                        curY += 90f;
                     }
+                    colX += 250f;
                 }
                 return "tidy:" + count;
             } catch (Exception ex) { return "tidy err:" + ex.Message; }
