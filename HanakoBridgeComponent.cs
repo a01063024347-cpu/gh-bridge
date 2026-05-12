@@ -793,6 +793,25 @@ namespace HanakoBridge
                 foreach (var obj in comps) {
                     try {
                         var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
+                        if (p == null && obj is IGH_Param) {
+                            // Slider/Panel 等自已是 IGH_Param，输出即自身
+                            var self = (IGH_Param)obj;
+                            string myId = idMap[obj.InstanceGuid];
+                            for (int i = 0; i < self.Recipients.Count; i++) {
+                                var target = self.Recipients[i];
+                                foreach (var o2 in comps) {
+                                    try {
+                                        var pp = o2.GetType().GetProperty("Params").GetValue(o2, null);
+                                        if (pp != null) { dynamic dpp = pp; var i2 = (IList)dpp.Input;
+                                            if (i2 != null) for (int j = 0; j < i2.Count; j++)
+                                                if (((IGH_Param)i2[j]).InstanceGuid == target.InstanceGuid)
+                                                    deps[idMap[o2.InstanceGuid]].Add(myId);
+                                        }
+                                    } catch { }
+                                }
+                            }
+                            continue;
+                        }
                         if (p == null) continue;
                         dynamic dp = p;
                         var il = (IList)dp.Input;
