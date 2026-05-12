@@ -33,6 +33,7 @@ namespace HanakoBridge
         private static readonly JavaScriptSerializer _json = new JavaScriptSerializer();
         public static Dictionary<string, string> ProxyDB;
         public static Dictionary<string, string> CompDB;
+        private static Dictionary<string, Guid> _idMap = new Dictionary<string, Guid>();
 
         private static GH_Document _ghDoc;
 
@@ -169,7 +170,7 @@ namespace HanakoBridge
                 if (end > start) guid = body.Substring(start, end - start);
             }
             if (guid.Length == 0) return "need guid";
-            var obj = CI(guid); if (obj == null) return "not found";
+            var obj = TryResolveComponent(guid); if (obj == null) return "not found: " + guid;
             try {
                 var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
                 dynamic dp = p;
@@ -238,7 +239,7 @@ namespace HanakoBridge
                     var cp = (Dictionary<string, object>)c;
                     string id = (string)cp["id"];
                     string guid = (string)cp["guid"];
-                    var obj = CI(guid);
+                    var obj = TryResolveComponent(guid);
                     if (obj == null) return "missing:" + guid;
                     if (cp.ContainsKey("val")) { try { dynamic d = obj; d.Value = Convert.ToDouble(cp["val"]); } catch { } }
                     if (cp.ContainsKey("nick")) { try { dynamic d = obj; d.NickName = (string)cp["nick"]; } catch { } }
@@ -262,8 +263,10 @@ namespace HanakoBridge
                     var wires = (ArrayList)def["wires"];
                     foreach (var w in wires) {
                         var wl = (IList)w;
-                        string fromId = (string)wl[0]; int fromOut = Convert.ToInt32(wl[1]);
-                        string toId = (string)wl[2]; int toIn = Convert.ToInt32(wl[3]);
+                        string fromId = (string)wl[0]; string toId = (string)wl[2];
+                        int fromOut = ResolvePortIndex(wl[1], created, fromId, false);
+                        int toIn = ResolvePortIndex(wl[3], created, toId, true);
+                        if (fromOut < 0 || toIn < 0) continue;
                         if (!created.ContainsKey(fromId) || !created.ContainsKey(toId)) continue;
                         try {
                             var fromObj = created[fromId]; var toObj = created[toId];
@@ -291,6 +294,16 @@ namespace HanakoBridge
                         var pos = (IList)kv.Value;
                         try { dynamic d = created[kv.Key]; d.Attributes.Pivot = new PointF(Convert.ToSingle(pos[0]), Convert.ToSingle(pos[1])); } catch { }
                     }
+                }
+                else {
+                    var deps = new Dictionary<string, List<string>>();
+                    foreach (var kv in created) deps[kv.Key] = new List<string>();
+                    if (def.ContainsKey("wires")) { var wl4 = (ArrayList)def["wires"]; foreach (var w in wl4) { var wl2 = (IList)w; string fid = (string)wl2[0]; string tid = (string)wl2[2]; if (deps.ContainsKey(tid)) deps[tid].Add(fid); } }
+                    var depth = new Dictionary<string, int>(); int maxDepth = 0; bool changed = true;
+                    while (changed) { changed = false; foreach (var id2 in created.Keys) { int maxDep = 0; bool ak = true; foreach (var dep in deps[id2]) { if (depth.ContainsKey(dep)) maxDep = Math.Max(maxDep, depth[dep] + 1); else if (created.ContainsKey(dep)) { ak = false; break; } } if (ak && (!depth.ContainsKey(id2) || depth[id2] != maxDep)) { depth[id2] = maxDep; if (maxDep > maxDepth) maxDepth = maxDep; changed = true; } } }
+                    var cr = new Dictionary<int, int>(); var ir = new Dictionary<string, int>();
+                    foreach (var id2 in created.Keys) { int d2 = depth.ContainsKey(id2) ? depth[id2] : maxDepth + 1; if (!cr.ContainsKey(d2)) cr[d2] = 0; ir[id2] = cr[d2]; cr[d2]++; }
+                    foreach (var id2 in created.Keys) { int col = depth.ContainsKey(id2) ? depth[id2] : maxDepth + 1; int row = ir[id2]; float x2 = col * 250f; float y2 = row * 60f; try { dynamic d = created[id2]; d.Attributes.Pivot = new PointF(x2, y2); } catch { } }
                 }
                 // 记录创建的组件 GUID，方便后续 wire 指令引用
                 var idMap = new List<object>();
@@ -630,9 +643,7 @@ namespace HanakoBridge
                 foreach (var w in wires) {
                     var wl = (IList)w;
                     string fromGuid = (string)wl[0];
-                    int fromOut = Convert.ToInt32(wl[1]);
                     string toGuid = (string)wl[2];
-                    int toIn = Convert.ToInt32(wl[3]);
                     // 按 InstanceGuid 查找画布上的组件
                     IGH_DocumentObject fromObj = null, toObj = null;
                     foreach (var obj in doc.Objects) {
@@ -640,6 +651,9 @@ namespace HanakoBridge
                         if (obj.InstanceGuid.ToString() == toGuid) toObj = obj;
                     }
                     if (fromObj == null || toObj == null) continue;
+                    int fromOut = ResolvePortOnObject(wl[1], fromObj, false);
+                    int toIn = ResolvePortOnObject(wl[3], toObj, true);
+                    if (fromOut < 0 || toIn < 0) continue;
                     try {
                         IGH_Param srcParam;
                         if (fromObj is IGH_Param) {
@@ -723,7 +737,7 @@ namespace HanakoBridge
                         var cp = (Dictionary<string, object>)c;
                         string id = (string)cp["id"];
                         string guid = (string)cp["guid"];
-                        var obj = CI(guid);
+                        var obj = TryResolveComponent(guid);
                         if (obj == null) continue;
                         try {
                             var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
@@ -948,6 +962,182 @@ namespace HanakoBridge
                 bmp.Save(p, System.Drawing.Imaging.ImageFormat.Png);
                 return _json.Serialize(new { ok = true, path = p, width = bmp.Width, height = bmp.Height });
             } catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
+        }
+        // ==== CANVAS ====
+        string DoCanvas()
+        {
+            var doc = _ghDoc;
+            if (doc == null) return "{\"error\":\"no doc\"}";
+            try
+            {
+                var comps = new List<object>();
+                foreach (var obj in doc.Objects)
+                {
+                    if (obj is HanakoBridgeComponent) continue;
+                    string name = "?", tn = "?";
+                    try { name = obj.NickName ?? obj.GetType().Name; } catch { name = obj.GetType().Name; }
+                    try { tn = obj.GetType().Name; } catch { }
+                    string g = obj.InstanceGuid.ToString();
+                    double x = 0, y = 0;
+                    try { var a = obj.Attributes; if (a != null) { x = a.Pivot.X; y = a.Pivot.Y; } } catch { }
+                    var ins = new List<object>();
+                    var outs = new List<object>();
+                    try
+                    {
+                        var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
+                        if (p != null)
+                        {
+                            dynamic dp = p;
+                            var il = (IList)dp.Input;
+                            if (il != null)
+                                for (int i = 0; i < il.Count; i++)
+                                {
+                                    var pi = (IGH_Param)il[i];
+                                    string iname = "?"; try { iname = pi.NickName ?? ("in" + i); } catch { }
+                                    ins.Add(new { port = i, name = iname, type = pi.TypeName ?? "?", connected = pi.SourceCount > 0 });
+                                }
+                            var ol = (IList)dp.Output;
+                            if (ol != null)
+                                for (int j = 0; j < ol.Count; j++)
+                                {
+                                    var po = (IGH_Param)ol[j];
+                                    string oname = "?"; try { oname = po.NickName ?? ("out" + j); } catch { }
+                                    int tc = 0;
+                                    foreach (var o2 in doc.Objects)
+                                    {
+                                        try
+                                        {
+                                            var p2 = o2.GetType().GetProperty("Params").GetValue(o2, null);
+                                            if (p2 != null) { dynamic dp2 = p2; var i2 = (IList)dp2.Input; if (i2 != null) for (int k = 0; k < i2.Count; k++) { var pi2 = (IGH_Param)i2[k]; if (pi2.SourceCount > 0) for (int s = 0; s < pi2.SourceCount; s++) if (pi2.Sources[s].InstanceGuid == po.InstanceGuid) tc++; } }
+                                        }
+                                        catch { }
+                                    }
+                                    outs.Add(new { port = j, name = oname, connected = tc > 0, targetCount = tc });
+                                }
+                        }
+                    }
+                    catch { }
+                    comps.Add(new { name, type = tn, guid = g, x, y, inputs = ins, outputs = outs });
+                }
+                return _json.Serialize(new { totalComponents = comps.Count, components = comps });
+            }
+            catch (Exception ex) { return "canvas err:" + ex.Message; }
+        }
+        // ==== EXPLAIN ====
+        string DoExplain(string body)
+        {
+            var doc = _ghDoc; if (doc == null) return "no doc";
+            try
+            {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                var gl = new List<string>();
+                if (def != null && def.ContainsKey("guids")) { var a = (ArrayList)def["guids"]; foreach (string s in a) gl.Add(s); }
+                if (gl.Count == 0) return "need guids";
+                var sel = new List<IGH_DocumentObject>(); var sgs = new HashSet<Guid>();
+                foreach (var o in doc.Objects) { string ig = o.InstanceGuid.ToString(); foreach (var g2 in gl) if (ig.StartsWith(g2)) { sel.Add(o); sgs.Add(o.InstanceGuid); break; } }
+                if (sel.Count == 0) return "no match";
+                var nm = new Dictionary<Guid, string>();
+                foreach (var o in sel) { string n = "?"; try { n = o.NickName; if (string.IsNullOrEmpty(n)) n = o.GetType().Name; } catch { n = o.GetType().Name; } nm[o.InstanceGuid] = n; }
+                var sb = new StringBuilder(); sb.Append("选中组件共" + sel.Count + "个。\n");
+                var ino = new List<string>(); var outo = new List<string>();
+                foreach (var o in sel)
+                {
+                    try
+                    {
+                        var p = o.GetType().GetProperty("Params").GetValue(o, null); if (p == null) continue;
+                        dynamic dp = p;
+                        var il = (IList)dp.Input;
+                        if (il != null)
+                            for (int i = 0; i < il.Count; i++)
+                            {
+                                var pi = (IGH_Param)il[i]; string pn = "?"; try { pn = pi.NickName ?? ("in" + i); } catch { }
+                                if (pi.SourceCount == 0) ino.Add(nm[o.InstanceGuid] + "." + pn + "(未连线)");
+                                else
+                                {
+                                    bool fs = false;
+                                    for (int s = 0; s < pi.SourceCount; s++)
+                                    {
+                                        var sg = pi.Sources[s].InstanceGuid;
+                                        if (sgs.Contains(sg))
+                                        {
+                                            fs = true; string sn = "?";
+                                            foreach (var o2 in doc.Objects)
+                                            {
+                                                try { var pp = o2.GetType().GetProperty("Params").GetValue(o2, null); if (pp != null) { dynamic dpp = pp; var ol2 = (IList)dpp.Output; if (ol2 != null) for (int oj = 0; oj < ol2.Count; oj++) if (((IGH_Param)ol2[oj]).InstanceGuid == sg) { try { sn = o2.NickName ?? o2.GetType().Name; } catch { } break; } } } catch { }
+                                            }
+                                            sb.Append("  " + sn + ".out → " + nm[o.InstanceGuid] + "." + pn + "\n");
+                                        }
+                                    }
+                                    if (!fs) { string sn = "外部"; try { var src = pi.Sources[0]; foreach (var o2 in doc.Objects) { try { var pp = o2.GetType().GetProperty("Params").GetValue(o2, null); if (pp != null) { dynamic dpp = pp; var ol2 = (IList)dpp.Output; if (ol2 != null) for (int oj = 0; oj < ol2.Count; oj++) if (((IGH_Param)ol2[oj]).InstanceGuid == src.InstanceGuid) { try { sn = o2.NickName ?? o2.GetType().Name; } catch { } break; } } } catch { } } } catch { } ino.Add(nm[o.InstanceGuid] + "." + pn + "(←" + sn + ")"); }
+                                }
+                            }
+                        var ol3 = (IList)dp.Output;
+                        if (ol3 != null)
+                            for (int j = 0; j < ol3.Count; j++)
+                            {
+                                var po = (IGH_Param)ol3[j]; string on = "?"; try { on = po.NickName ?? ("out" + j); } catch { }
+                                bool any = false;
+                                foreach (var o2 in doc.Objects) { try { var p2 = o2.GetType().GetProperty("Params").GetValue(o2, null); if (p2 != null) { dynamic dp2 = p2; var i2 = (IList)dp2.Input; if (i2 != null) for (int k = 0; k < i2.Count; k++) { var pi2 = (IGH_Param)i2[k]; if (pi2.SourceCount > 0) for (int s = 0; s < pi2.SourceCount; s++) if (pi2.Sources[s].InstanceGuid == po.InstanceGuid) { any = true; break; } } } } catch { } if (any) break; }
+                                if (!any) outo.Add(nm[o.InstanceGuid] + "." + on + "(未连线)");
+                            }
+                    }
+                    catch { }
+                }
+                if (ino.Count > 0) { sb.Append("\n外部输入/未连线端口：\n"); foreach (var s in ino) sb.Append("  ◇ " + s + "\n"); }
+                if (outo.Count > 0) { sb.Append("\n外部输出/未连线端口：\n"); foreach (var s in outo) sb.Append("  ◇ " + s + "\n"); }
+                return sb.ToString();
+            }
+            catch (Exception ex) { return "explain err:" + ex.Message; }
+        }
+        // ==== NAME-to-GUID ====
+        IGH_DocumentObject TryResolveComponent(string input)
+        {
+            try { var g = new Guid(input); var r = CI(input); if (r != null) return (IGH_DocumentObject)r; } catch { }
+            if (input.Length >= 8) { try { var r = CI(input); if (r != null) return (IGH_DocumentObject)r; } catch { } }
+            if (CompDB != null)
+            {
+                string key = input.ToLowerInvariant();
+                foreach (var kv in CompDB) { string name = kv.Value; int pipe = name.IndexOf('|'); if (pipe > 0) name = name.Substring(0, pipe); if (name.ToLowerInvariant() == key) { try { return (IGH_DocumentObject)CI(kv.Key); } catch { } } }
+                foreach (var kv in CompDB) { string name = kv.Value; int pipe = name.IndexOf('|'); if (pipe > 0) name = name.Substring(0, pipe); if (name.ToLowerInvariant().Contains(key)) { try { return (IGH_DocumentObject)CI(kv.Key); } catch { } } }
+            }
+            try { var proxy = Grasshopper.Instances.ComponentServer.FindObjectByName(input, true, true); if (proxy != null) { try { return (IGH_DocumentObject)CI(proxy.Guid.ToString().Substring(0, 8)); } catch { } } } catch { }
+            return null;
+        }
+
+        int ResolvePortIndex(object val, Dictionary<string, object> created, string compId, bool isInput)
+        {
+            if (val is int i2) return i2; if (val is long l2) return (int)l2; if (val is double d2) return (int)d2;
+            string name = val.ToString(); if (int.TryParse(name, out int portNum)) return portNum;
+            object compObj = null;
+            if (created.ContainsKey(compId)) compObj = created[compId];
+            else if (_idMap.ContainsKey(compId)) { var g3 = _idMap[compId]; foreach (var o in _ghDoc.Objects) { if (o.InstanceGuid == g3) { compObj = o; break; } } }
+            if (compObj != null) return FindPortByName((IGH_DocumentObject)compObj, name, isInput);
+            return -1;
+        }
+
+        int ResolvePortOnObject(object val, IGH_DocumentObject obj, bool isInput)
+        {
+            if (val is int i3) return i3; if (val is long l3) return (int)l3; if (val is double d3) return (int)d3;
+            string name = val.ToString(); if (int.TryParse(name, out int portNum)) return portNum;
+            return FindPortByName(obj, name, isInput);
+        }
+
+        int FindPortByName(IGH_DocumentObject obj, string name, bool isInput)
+        {
+            try
+            {
+                if (obj is IGH_Param) { return 0; }
+                var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
+                if (p == null) return -1;
+                dynamic dp = p;
+                var list = isInput ? (IList)dp.Input : (IList)dp.Output;
+                if (list == null) return -1;
+                string key = name.ToLowerInvariant();
+                for (int i = 0; i < list.Count; i++) { var param = (IGH_Param)list[i]; if (param.Name.ToLowerInvariant() == key) return i; if ((param.NickName ?? "").ToLowerInvariant() == key) return i; }
+                for (int i = 0; i < list.Count; i++) { var param = (IGH_Param)list[i]; if (param.Name.ToLowerInvariant().Contains(key)) return i; if ((param.NickName ?? "").ToLowerInvariant().Contains(key)) return i; }
+            }
+            catch { }
+            return -1;
         }
     }
 }
