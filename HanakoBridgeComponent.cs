@@ -40,17 +40,20 @@ namespace HanakoBridge
         public override Guid ComponentGuid { get { return new Guid("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"); } }
         protected override Bitmap Icon { get { return null; } }
         public override GH_Exposure Exposure { get { return GH_Exposure.primary; } }
-        protected override void RegisterInputParams(GH_InputParamManager pM) { pM.AddBooleanParameter("Tidy", "T", "整理画布", GH_ParamAccess.item); }
+        protected override void RegisterInputParams(GH_InputParamManager pM) { }
         protected override void RegisterOutputParams(GH_OutputParamManager pM) { pM.AddTextParameter("S", "S", "", GH_ParamAccess.item); }
+
+        public override void AppendAdditionalMenuItems(System.Windows.Forms.ToolStripDropDown menu) {
+            base.AppendAdditionalMenuItems(menu);
+            Menu_AppendItem(menu, "整理画布", (sender, e) => {
+                _ghDoc = OnPingDocument();
+                _lastStatus = DoTidy();
+                ExpireSolution(true);
+            });
+        }
 
         protected override void SolveInstance(IGH_DataAccess DA) {
             _ghDoc = OnPingDocument();
-            // 整理按钮：拨到 True 就触发整理
-            bool tidyToggle = false;
-            DA.GetData(0, ref tidyToggle);
-            if (tidyToggle) {
-                _lastStatus = DoTidy();
-            }
             var cmd = Interlocked.Exchange(ref _pendingCmd, null);
             if (cmd != null) {
                 _solving = true;
