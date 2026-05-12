@@ -410,7 +410,14 @@ namespace HanakoBridge
                 }
                 if (def.ContainsKey("wires")) {
                     var wires = (ArrayList)def["wires"];
-                    foreach (var w in wires) {
+                    for (int wi = 0; wi < wires.Count; wi++) {
+                        var w = wires[wi];
+                        // 支持箭头语法: "r→cir.R" 或 "r.Number→cir.R"
+                        if (w is string) {
+                            var arrow = ParseArrowWire((string)w);
+                            if (arrow == null) continue;
+                            w = wires[wi] = new ArrayList { arrow.Item1, arrow.Item2, arrow.Item3, arrow.Item4 };
+                        }
                         var wl = (IList)w;
                         string fromId = (string)wl[0]; string toId = (string)wl[2];
                         int fromOut = ResolvePortIndex(wl[1], created, fromId, false);
@@ -1716,6 +1723,29 @@ namespace HanakoBridge
                 return _json.Serialize(new { ok = true, path = p, width = bmp.Width, height = bmp.Height });
             }
             catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
+        }
+
+        // ==== 箭头语法解析: "r→cir.R" → ["r", 0, "cir", "R"] ====
+        Tuple<string, object, string, object> ParseArrowWire(string arrow) {
+            try {
+                int arrowPos = arrow.IndexOf('→');
+                if (arrowPos < 0) arrowPos = arrow.IndexOf("->");
+                if (arrowPos < 0) return null;
+                string left = arrow.Substring(0, arrowPos).Trim();
+                string right = arrow.Substring(arrowPos + 1).Trim();
+                if (right.StartsWith(">")) right = right.Substring(1);
+                // 左侧: id 或 id.portName
+                string fromId; object fromPort = 0;
+                int dotPos = left.LastIndexOf('.');
+                if (dotPos > 0) { fromId = left.Substring(0, dotPos); fromPort = left.Substring(dotPos + 1); }
+                else fromId = left;
+                // 右侧: id.portName
+                string toId; object toPort = 0;
+                dotPos = right.LastIndexOf('.');
+                if (dotPos > 0) { toId = right.Substring(0, dotPos); toPort = right.Substring(dotPos + 1); }
+                else toId = right;
+                return Tuple.Create(fromId, fromPort, toId, toPort);
+            } catch { return null; }
         }
 
         // ==== NAME-to-GUID ====
