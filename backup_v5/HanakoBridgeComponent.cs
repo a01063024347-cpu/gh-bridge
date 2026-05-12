@@ -24,17 +24,15 @@ namespace HanakoBridge
         private static string _pendingCmd;
         private static ManualResetEvent _pendingWait;
         private static string _pendingResult;
-        private static volatile bool _solving;
-        private static DateTime _solveStart;
-        private static volatile bool _asyncBuild;
-        private static string _asyncResult;
-        private static volatile bool _secondSolve;
-        private static readonly object _cmdLock = new object();
         private static readonly JavaScriptSerializer _json = new JavaScriptSerializer();
         public static Dictionary<string, string> ProxyDB;
         public static Dictionary<string, string> CompDB;
+        private static Dictionary<string, Guid> _idMap = new Dictionary<string, Guid>();
 
         private static GH_Document _ghDoc;
+        private static volatile bool _solving;
+        private static DateTime _solveStart;
+        private static readonly object _cmdLock = new object();
 
         public HanakoBridgeComponent() : base("Hanako", "Hanako", "Bridge", "Hanako", "Bridge") { }
         public override Guid ComponentGuid { get { return new Guid("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"); } }
@@ -47,7 +45,15 @@ namespace HanakoBridge
             _ghDoc = OnPingDocument();
             var cmd = Interlocked.Exchange(ref _pendingCmd, null);
             if (cmd != null) {
-                _lastStatus = Exec(cmd);
+                _solving = true;
+                _solveStart = DateTime.Now;
+                try {
+                    _lastStatus = Exec(cmd);
+                } catch (Exception ex) {
+                    _lastStatus = "exec_err:" + ex.Message;
+                } finally {
+                    _solving = false;
+                }
                 var w = Interlocked.Exchange(ref _pendingWait, null);
                 if (w != null) { _pendingResult = _lastStatus; w.Set(); }
             }
@@ -56,6 +62,13 @@ namespace HanakoBridge
                 this.Message = "OK"; _lastStatus = "OK";
                 _lisThread = new Thread(LisRun) { IsBackground = true };
                 _lisThread.Start();
+            }
+            // 看门狗：如果求解超过 60 秒，强制标记为完成
+            if (_solving && (DateTime.Now - _solveStart).TotalSeconds > 60) {
+                _solving = false;
+                _lastStatus = "timeout: solve took too long";
+                var w = Interlocked.Exchange(ref _pendingWait, null);
+                if (w != null) { _pendingResult = _lastStatus; w.Set(); }
             }
             DA.SetData(0, _lastStatus);
         }
@@ -86,6 +99,10 @@ namespace HanakoBridge
                             case "wire":             return DoWire(body);
                             case "verify":             return DoVerify(body);
                             case "diag":              return DoDiag();
+                            case "diagnose":          return DoDiagnose();
+                            case "cancel":           return "{\"ok\":true,\"action\":\"cancel\"}";
+                            case "query":           return DoQuery(body);
+                            case "loadgh":          return DoLoadGH(body);
                             default:                 return "?";
                         }
                     }
@@ -102,12 +119,12 @@ namespace HanakoBridge
         void LisRun() {
             try {
                 int port = 0;
-                for (int p = 14880; p < 15000; p++) {
+                for (int p = 18080; p < 18100; p++) {
                     try { var l = new HttpListener(); l.Prefixes.Add("http://localhost:" + p + "/"); l.Start(); _listener = l; port = p; break; } catch { }
                 }
                 if (port == 0) { _lastStatus = "NO PORT"; return; }
                 _lastStatus = ":" + port;
-                try { File.WriteAllText("D:/-A-hanako/gh-bridge/port.txt", port.ToString()); } catch { }
+                try { File.WriteAllText("D:/agents/-A-hanako/gh-bridge/port.txt", port.ToString()); } catch { }
                 while (true) {
                     var ctx = _listener.GetContext();
                     try { Reply(ctx); } catch { try { ctx.Response.OutputStream.Close(); } catch { } }
@@ -123,22 +140,56 @@ namespace HanakoBridge
                 int read = req.InputStream.Read(buf, 0, buf.Length);
                 string body = Encoding.UTF8.GetString(buf, 0, read);
                 if (body.Contains("\"ping\"")) { result = "{\"ok\":true}"; }
-                else {
-                    // 所有指令统一走队列 + SolveInstance 路径
-                    _pendingCmd = body;
-                    var w = new ManualResetEvent(false);
-                    _pendingWait = w; _pendingResult = null;
+                else if (body.Contains("\"cancel\"")) {
+                    // 强制取消当前求解
+                    lock (_cmdLock) {
+                        _pendingCmd = null;
+                        var w = Interlocked.Exchange(ref _pendingWait, null);
+                        if (w != null) { _pendingResult = "cancelled"; w.Set(); }
+                        _solving = false;
+                    }
                     try {
-                        Rhino.RhinoApp.MainApplicationWindow.Invoke((Action)(() => {
-                            try {
-                                ExpireSolution(false);
-                                var cv = Grasshopper.Instances.ActiveCanvas;
-                                if (cv != null) { var d = cv.Document; if (d != null) d.NewSolution(false); }
-                            } catch { }
-                        }));
+                        var cv = Grasshopper.Instances.ActiveCanvas;
+                        if (cv != null) { var d = cv.Document; if (d != null) { d.ScheduleSolution(1); } }
                     } catch { }
-                    if (w.WaitOne(15000)) result = _pendingResult ?? "nope";
-                    else result = "queued";
+                    result = "{\"ok\":true,\"action\":\"cancel\"}";
+                }
+                else {
+                    // 如果上一个指令还在求解中，等待它完成或超时
+                    lock (_cmdLock) {
+                        if (_solving) {
+                            // 上一个指令还在求解，等 5 秒看能不能完成
+                            var oldW = _pendingWait;
+                            if (oldW != null) oldW.WaitOne(5000);
+                            if (_solving) {
+                                // 还在求解，强制取消
+                                _pendingCmd = null;
+                                var w = Interlocked.Exchange(ref _pendingWait, null);
+                                if (w != null) { _pendingResult = "prev_timeout"; w.Set(); }
+                                _solving = false;
+                            }
+                        }
+                        _pendingCmd = body;
+                        var w2 = new ManualResetEvent(false);
+                        _pendingWait = w2; _pendingResult = null;
+                        try {
+                            Rhino.RhinoApp.MainApplicationWindow.Invoke((Action)(() => {
+                                try {
+                                    ExpireSolution(false);
+                                    var cv = Grasshopper.Instances.ActiveCanvas;
+                                    if (cv != null) { var d = cv.Document; if (d != null) d.NewSolution(false); }
+                                } catch { }
+                            }));
+                        } catch { }
+                        if (w2.WaitOne(60000)) result = _pendingResult ?? "nope";
+                        else {
+                            // 60 秒超时，强制取消
+                            _pendingCmd = null;
+                            Interlocked.Exchange(ref _pendingWait, null);
+                            _solving = false;
+                            result = "{\"error\":\"timeout: solve took >60s\",\"action\":\"timeout\"}";
+                        }
+                    }
                 }
             } else result = "{\"ok\":false}";
             var rb = Encoding.UTF8.GetBytes(result);
@@ -211,16 +262,50 @@ namespace HanakoBridge
                         try { name = obj.GetType().Name; } catch { }
                         try { dynamic d = obj; name = d.NickName ?? name; } catch { }
                         if (inCount > 0 || outCount > 0 || name == "Hanako")
-                            details.Add(new { name, inputs = inCount, connected = inConnected, outputs = outCount });
+                            details.Add(new { name, guid = obj.InstanceGuid.ToString(), inputs = inCount, connected = inConnected, outputs = outCount });
                     } catch { }
                 }
+                // Build guid->name map and collect wire connections
+                var guidMap = new Dictionary<Guid, string>();
+                var wireConnections = new List<object>();
+                foreach (var obj in doc.Objects) {
+                    string cname = "?";
+                    try { cname = obj.NickName ?? obj.GetType().Name; } catch { cname = obj.GetType().Name; }
+                    guidMap[obj.InstanceGuid] = cname;
+                }
+                foreach (var obj in doc.Objects) {
+                    try {
+                        var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
+                        if (p == null) continue;
+                        dynamic dp = p;
+                        var inputList = (IList)dp.Input;
+                        if (inputList == null) continue;
+                        string toName = "?";
+                        try { toName = obj.NickName ?? obj.GetType().Name; } catch { toName = obj.GetType().Name; }
+                        for (int i = 0; i < inputList.Count; i++) {
+                            try {
+                                var pIn = (IGH_Param)inputList[i];
+                                if (pIn.Sources == null) continue;
+                                foreach (var src in pIn.Sources) {
+                                    try {
+                                        string fromName = "?";
+                                        if (guidMap.ContainsKey(src.InstanceGuid)) fromName = guidMap[src.InstanceGuid];
+                                        wireConnections.Add(new { from = fromName, to = toName, fromPort = src.NickName ?? "?", toPort = pIn.NickName ?? "?" });
+                                    } catch { }
+                                }
+                            } catch { }
+                        }
+                    } catch { }
+                }
+
                 return _json.Serialize(new {
                     totalComponents = totalComps,
                     totalInputs = totalIns,
                     connectedInputs = connectedIns,
                     unconnectedInputs = totalIns - connectedIns,
                     totalOutputs = totalOuts,
-                    details
+                    details,
+                    wires = wireConnections
                 });
             } catch (Exception ex) { return "wires err:" + ex.Message; }
         }
@@ -240,7 +325,6 @@ namespace HanakoBridge
                     string guid = (string)cp["guid"];
                     var obj = CI(guid);
                     if (obj == null) return "missing:" + guid;
-                    if (cp.ContainsKey("val")) { try { dynamic d = obj; d.Value = Convert.ToDouble(cp["val"]); } catch { } }
                     if (cp.ContainsKey("nick")) { try { dynamic d = obj; d.NickName = (string)cp["nick"]; } catch { } }
                     // 支持 Param_Interval 设 Domain 值
                     if (cp.ContainsKey("dval")) {
@@ -257,6 +341,24 @@ namespace HanakoBridge
                     }
                     created[id] = obj;
                     try { doc.AddObject((IGH_DocumentObject)obj, false); } catch { }
+                    // Slider 范围必须在 AddObject 之后设，之前 Slider 属性为 null
+                    if (cp.ContainsKey("val")) {
+                        try {
+                            double v = Convert.ToDouble(cp["val"]);
+                            var slider = obj as Grasshopper.Kernel.Special.GH_NumberSlider;
+                            if (slider != null) {
+                                double min = cp.ContainsKey("min") ? Convert.ToDouble(cp["min"]) : Math.Min(0, v);
+                                double max = cp.ContainsKey("max") ? Convert.ToDouble(cp["max"]) : Math.Max(v > 1000 ? v : 1000, v * 2);
+                                slider.Slider.Minimum = (decimal)min;
+                                slider.Slider.Maximum = (decimal)max;
+                                slider.Slider.DecimalPlaces = 1;
+                                slider.SetSliderValue((decimal)v);
+                            } else {
+                                dynamic d = obj;
+                                d.Value = v;
+                            }
+                        } catch { }
+                    }
                 }
                 if (def.ContainsKey("wires")) {
                     var wires = (ArrayList)def["wires"];
@@ -264,21 +366,27 @@ namespace HanakoBridge
                         var wl = (IList)w;
                         string fromId = (string)wl[0]; int fromOut = Convert.ToInt32(wl[1]);
                         string toId = (string)wl[2]; int toIn = Convert.ToInt32(wl[3]);
-                        if (!created.ContainsKey(fromId) || !created.ContainsKey(toId)) continue;
+                        // 先从本次 build 的 created 字典找，再从画布上已有的组件找
+                        object fromObj = null, toObj = null;
+                        if (created.ContainsKey(fromId)) fromObj = created[fromId];
+                        else if (_idMap.ContainsKey(fromId)) { foreach (var obj in doc.Objects) { try { if (obj.InstanceGuid == _idMap[fromId]) { fromObj = obj; break; } } catch { } } }
+                        if (created.ContainsKey(toId)) toObj = created[toId];
+                        else if (_idMap.ContainsKey(toId)) { foreach (var obj in doc.Objects) { try { if (obj.InstanceGuid == _idMap[toId]) { toObj = obj; break; } } catch { } } }
+                        if (fromObj == null || toObj == null) continue;
                         try {
-                            var fromObj = created[fromId]; var toObj = created[toId];
-                            // 获取源参数：如果 fromObj 自身就是 IGH_Param（如 Number Slider），直接用它
+                            var fromObj2 = fromObj; var toObj2 = toObj;
+                            // 获取源参数：如果 fromObj2 自身就是 IGH_Param（如 Number Slider），直接用它
                             // 否则从 Params.Output 里取
                             IGH_Param srcParam;
-                            if (fromObj is IGH_Param) {
-                                srcParam = (IGH_Param)fromObj;
+                            if (fromObj2 is IGH_Param) {
+                                srcParam = (IGH_Param)fromObj2;
                             } else {
-                                var fromP = fromObj.GetType().GetProperty("Params").GetValue(fromObj, null);
+                                var fromP = fromObj2.GetType().GetProperty("Params").GetValue(fromObj2, null);
                                 dynamic fromPd = fromP;
                                 srcParam = (IGH_Param)((IList)fromPd.Output)[fromOut];
                             }
                             // 目标参数
-                            var toP = toObj.GetType().GetProperty("Params").GetValue(toObj, null);
+                            var toP = toObj2.GetType().GetProperty("Params").GetValue(toObj2, null);
                             dynamic toPd2 = toP;
                             ((IGH_Param)((IList)toPd2.Input)[toIn]).AddSource(srcParam);
                         } catch { }
@@ -298,10 +406,11 @@ namespace HanakoBridge
                     try {
                         var obj = (IGH_DocumentObject)kv.Value;
                         idMap.Add(new { id = kv.Key, guid = obj.InstanceGuid.ToString() });
+                        _idMap[kv.Key] = obj.InstanceGuid;
                     } catch { }
                 }
-                // 调度下一轮求解（当前在求解中，不能直接 NewSolution）
-                try { doc.ScheduleSolution(5, (d) => { try { d.NewSolution(false); } catch { } }); } catch { }
+                // 不在这里调度求解——GH 会自动检测组件变更并触发求解
+                // 避免 ScheduleSolution 导致无限求解循环
                 return _json.Serialize(new { result = "built:" + created.Count + " comps", components = idMap });
             } catch (Exception ex) { return "build err:" + ex.Message; }
         }
@@ -538,10 +647,11 @@ namespace HanakoBridge
             var doc = _ghDoc;
             if (doc == null) return "no doc";
             try {
+                var myGuid = ComponentGuid;
                 var toRemove = new List<IGH_DocumentObject>();
                 foreach (var obj in doc.Objects) {
-                    // 保留 Hanako 桥本身
-                    if (obj is HanakoBridgeComponent) continue;
+                    // 保留 Hanako 桥本身（用 GUID 判断）
+                    try { if (obj.InstanceGuid == InstanceGuid) continue; } catch { }
                     toRemove.Add(obj);
                 }
                 int count = toRemove.Count;
@@ -552,6 +662,92 @@ namespace HanakoBridge
                 return "cleared:" + count + " objects";
             } catch (Exception ex) { return "clear err:" + ex.Message; }
         }
+
+        string DoQuery(string body) {
+            try {
+                var rhinoDoc = Rhino.RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null) return "{\"error\":\"no rhino doc\"}";
+                var objs = rhinoDoc.Objects;
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\"objects\":[");
+                int i = 0;
+                foreach (var obj in objs) {
+                    try {
+                        var geo = obj.Geometry;
+                        if (geo == null) continue;
+                        string type = geo.GetType().Name;
+                        var bbox = geo.GetBoundingBox(true);
+                        bool valid = geo.IsValid;
+                        if (i > 0) sb.Append(",");
+                        sb.Append("{\"type\":\"" + type + "\"");
+                        sb.Append(",\"valid\":" + valid.ToString().ToLower());
+                        sb.Append(",\"bbox\":[" +
+                            Math.Round(bbox.Min.X,1) + "," + Math.Round(bbox.Min.Y,1) + "," + Math.Round(bbox.Min.Z,1) + "," +
+                            Math.Round(bbox.Max.X,1) + "," + Math.Round(bbox.Max.Y,1) + "," + Math.Round(bbox.Max.Z,1) + "]");
+                        sb.Append(",\"dim\":[" + Math.Round(bbox.Max.X - bbox.Min.X,1) + "," + Math.Round(bbox.Max.Y - bbox.Min.Y,1) + "," + Math.Round(bbox.Max.Z - bbox.Min.Z,1) + "]}");
+                        i++;
+                    } catch { }
+                }
+                sb.Append("],\"count\":" + i + "}");
+                return sb.ToString();
+            } catch (Exception ex) { return "{\"error\":\"" + ex.Message + "\"}"; }
+        }
+
+        // ==== LOADGH ====
+        string DoLoadGH(string body) {
+            try {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                if (def == null || !def.ContainsKey("path")) return "{\"error\":\"need path\"}";
+                string path = (string)def["path"];
+                if (!File.Exists(path)) return "{\"error\":\"file not found\"}";
+
+                var bytes = File.ReadAllBytes(path);
+                var text = System.Text.Encoding.Unicode.GetString(bytes);
+
+                var assemblies = new Dictionary<string, int>();
+                int pos = 0;
+                while (pos < text.Length) {
+                    int found = text.IndexOf(".dll", pos, StringComparison.OrdinalIgnoreCase);
+                    if (found < 0) break;
+                    int start = found - 1;
+                    while (start >= 0 && (char.IsLetterOrDigit(text[start]) || text[start] == '_' || text[start] == '.')) start--;
+                    start++;
+                    string name = text.Substring(start, found - start);
+                    if (name.Length > 2 && !name.Contains("\\")) {
+                        if (assemblies.ContainsKey(name)) assemblies[name]++;
+                        else assemblies[name] = 1;
+                    }
+                    pos = found + 4;
+                }
+                pos = 0;
+                while (pos < text.Length) {
+                    int found = text.IndexOf(".gha", pos, StringComparison.OrdinalIgnoreCase);
+                    if (found < 0) break;
+                    int start = found - 1;
+                    while (start >= 0 && (char.IsLetterOrDigit(text[start]) || text[start] == '_' || text[start] == '.')) start--;
+                    start++;
+                    string name = text.Substring(start, found - start);
+                    if (name.Length > 2 && !name.Contains("\\")) {
+                        if (assemblies.ContainsKey(name)) assemblies[name]++;
+                        else assemblies[name] = 1;
+                    }
+                    pos = found + 4;
+                }
+
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\"file\":\"" + Path.GetFileName(path) + "\"");
+                sb.Append(",\"assemblies\":[");
+                bool first = true;
+                foreach (var kv in assemblies) {
+                    if (!first) sb.Append(",");
+                    sb.Append("{\"name\":\"" + kv.Key + "\",\"count\":" + kv.Value + "}");
+                    first = false;
+                }
+                sb.Append("]}");
+                return sb.ToString();
+            } catch (Exception ex) { return "{\"error\":\"" + ex.Message + "\"}"; }
+        }
+
 
         // ==== BAKE ====
         string DoBake() {
@@ -824,6 +1020,188 @@ namespace HanakoBridge
                     errors = errCount,
                     warnings = warnCount,
                     details = results
+                });
+            } catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
+        }
+
+        // ==== DIAGNOSE ====
+        string DoDiagnose() {
+            var doc = _ghDoc;
+            if (doc == null) return _json.Serialize(new { error = "no doc" });
+            try {
+                // 先触发一次求解，确保几何体是最新的
+                try { doc.NewSolution(false); } catch { }
+
+                var problems = new List<object>();
+                int healthyComps = 0, problemComps = 0;
+
+                foreach (var obj in doc.Objects) {
+                    if (obj is HanakoBridgeComponent) continue;
+
+                    string compName = obj.GetType().Name;
+                    string nickName = "";
+                    try { dynamic d = obj; nickName = d.NickName ?? ""; } catch { }
+                    string guidPrefix = obj.InstanceGuid.ToString().Substring(0, 8);
+                    int pivotX = 0, pivotY = 0;
+                    try { dynamic d = obj; pivotX = (int)d.Attributes.Pivot.X; pivotY = (int)d.Attributes.Pivot.Y; } catch { }
+
+                    bool hasProblem = false;
+                    var issues = new List<object>();
+
+                    try {
+                        var p = obj.GetType().GetProperty("Params").GetValue(obj, null);
+                        if (p == null) continue;
+                        dynamic dp = p;
+                        var outs = (IList)dp.Output;
+                        if (outs == null) continue;
+
+                        for (int i = 0; i < outs.Count; i++) {
+                            try {
+                                var ghOut = (IGH_Param)outs[i];
+                                string outName = "";
+                                try { outName = ghOut.NickName ?? ""; } catch { }
+                                string outType = ghOut.TypeName ?? "";
+
+                                var data = ghOut.VolatileData;
+                                if (data == null || data.IsEmpty) {
+                                    // 输出为空 — 可能还没求解或输入缺失
+                                    // 只有非空输入但空输出才算问题
+                                    bool hasInput = false;
+                                    try {
+                                        var ins = (IList)dp.Input;
+                                        if (ins != null) {
+                                            for (int j = 0; j < ins.Count; j++) {
+                                                try { if (((IGH_Param)ins[j]).SourceCount > 0) { hasInput = true; break; } } catch { }
+                                            }
+                                        }
+                                    } catch { }
+                                    if (hasInput) {
+                                        hasProblem = true;
+                                        issues.Add(new { output = i, name = outName, type = outType, problem = "empty_output", detail = "有输入但输出为空" });
+                                    }
+                                    continue;
+                                }
+
+                                // 检查每条数据
+                                int itemIdx = 0;
+                                foreach (var item in data.AllData(true)) {
+                                    try {
+                                        if (item == null) {
+                                            hasProblem = true;
+                                            issues.Add(new { output = i, name = outName, item = itemIdx, problem = "null_item", detail = "数据项为 null" });
+                                            itemIdx++;
+                                            continue;
+                                        }
+
+                                        var valProp = item.GetType().GetProperty("Value");
+                                        if (valProp == null) { itemIdx++; continue; }
+                                        var val = valProp.GetValue(item, null);
+                                        if (val == null) {
+                                            hasProblem = true;
+                                            issues.Add(new { output = i, name = outName, item = itemIdx, problem = "null_value", detail = "Value 为 null" });
+                                            itemIdx++;
+                                            continue;
+                                        }
+
+                                        // 根据类型检查退化
+                                        string typeName = val.GetType().Name;
+
+                                        if (val is Rhino.Geometry.Point3d) {
+                                            var pt = (Rhino.Geometry.Point3d)val;
+                                            if (pt.X == 0 && pt.Y == 0 && pt.Z == 0) {
+                                                // 点在原点 — 可能是未初始化，标记为可疑
+                                                // 不直接报错，因为原点可能是合法的
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Point3f) {
+                                            var pt = (Rhino.Geometry.Point3f)val;
+                                            if (pt.X == 0 && pt.Y == 0 && pt.Z == 0) {
+                                                // 同上
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Curve) {
+                                            var crv = (Rhino.Geometry.Curve)val;
+                                            if (crv.GetLength() < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_length_curve", detail = "曲线长度=" + crv.GetLength().ToString("E2"), length = Math.Round(crv.GetLength(), 6) });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Surface) {
+                                            var srf = (Rhino.Geometry.Surface)val;
+                                            var mass = Rhino.Geometry.AreaMassProperties.Compute(srf);
+                                            if (mass == null || mass.Area < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_area_surface", detail = "面积=" + (mass?.Area.ToString("E2") ?? "null") });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Brep) {
+                                            var brep = (Rhino.Geometry.Brep)val;
+                                            var mass = Rhino.Geometry.AreaMassProperties.Compute(brep);
+                                            if (mass == null || mass.Area < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_area_brep", detail = "Brep 面积=" + (mass?.Area.ToString("E2") ?? "null") });
+                                            }
+                                            if (brep.Faces.Count == 0) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "empty_brep", detail = "Brep 无面" });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Mesh) {
+                                            var mesh = (Rhino.Geometry.Mesh)val;
+                                            if (mesh.Faces.Count == 0) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "empty_mesh", detail = "Mesh 无面" });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Line) {
+                                            var line = (Rhino.Geometry.Line)val;
+                                            if (line.Length < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_length_line", detail = "线段长度=" + line.Length.ToString("E2") });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Circle) {
+                                            var circ = (Rhino.Geometry.Circle)val;
+                                            if (circ.Radius < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "zero_radius_circle", detail = "圆半径=" + circ.Radius.ToString("E2") });
+                                            }
+                                        }
+                                        else if (val is Rhino.Geometry.Plane) {
+                                            // 退化平面：法向量为零
+                                            var pl = (Rhino.Geometry.Plane)val;
+                                            if (pl.ZAxis.Length < 1e-6) {
+                                                hasProblem = true;
+                                                issues.Add(new { output = i, name = outName, item = itemIdx, problem = "degenerate_plane", detail = "平面法向量退化" });
+                                            }
+                                        }
+                                    } catch { }
+                                    itemIdx++;
+                                }
+                            } catch { }
+                        }
+                    } catch { }
+
+                    if (hasProblem) {
+                        problemComps++;
+                        problems.Add(new {
+                            component = compName,
+                            nickname = nickName,
+                            guid = guidPrefix,
+                            position = new { x = pivotX, y = pivotY },
+                            issues
+                        });
+                    } else {
+                        healthyComps++;
+                    }
+                }
+
+                return _json.Serialize(new {
+                    result = "diagnose",
+                    totalComponents = problemComps + healthyComps,
+                    healthy = healthyComps,
+                    problems = problemComps,
+                    details = problems
                 });
             } catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
         }

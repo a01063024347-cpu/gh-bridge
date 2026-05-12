@@ -31,14 +31,19 @@ gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP �
 | `builddb` | 建立完整组件数据库 |
 | `qdb` | 按关键词搜索组件 |
 | `inspect` | 查看组件的输入输出接口 |
-| `verify` | 预检组件+连线计划（build 前必调） |
-| `build` | 创建组件、连线、布位、求解 |
+| `verify` | 预检组件+连线计划 |
+| `build` | 创建组件、连线、布位（需设 positions） |
 | `wire` | 分步连线（用完整 InstanceGuid） |
+| `set` | 设置组件内部参数（Branch路径、Dispatch模式等） |
+| `gettype` | 从实例GUID反查类型GUID |
 | `bake` | 烘焙 GH 输出到 Rhino 文档 |
 | `clear` | 清空画布（保留桥自身） |
+| `cancel` | 取消当前求解 + 触发新求解 |
 | `scene` | 三边状态总览（Rhino/GH/Revit） |
 | `wires` | 检查画布连线状态 |
 | `diag` | 诊断组件运行时错误 |
+| `diagnose` | 诊断退化几何体 |
+| `geomcheck` | 遍历几何输出，检测零长度/无效Brep/零体积 |
 | `check` | 检测 RIR 连接 + Revit 元素数 |
 | `get_levels` | 查询 Revit 标高 |
 | `get_families` | 查询 Revit 族类型 |
@@ -54,9 +59,11 @@ gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP �
 2. clear        如有残留组件
 3. builddb      建立组件数据库（会话中一次）
 4. qdb          确认所需组件存在
-5. verify       预检组件+连线方案
-6. build        创建电池组+连线+求解
-7. scene        确认结果
+5. build        分段创建电池组（每段10-15组件）
+6. cancel       触发再求解（two-solve机制）
+7. diagnose     确认组件计算正常
+8. geomcheck    检测退化几何体（零长度曲线/无效Brep/X标记）
+9. bake         烘焙到 Rhino
 ```
 
 ### 分步构建（推荐大电池组）
@@ -70,7 +77,7 @@ gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP �
 
 ### 推入 Revit
 
-在 build 中包含 `AddDirectShapeBrep`（GUID: `5ade9ae3`），将 Brep 输出连到其输入。
+在 build 中包含 `AddDirectShapeGeometry`（GUID: `0bfbda45`），将几何输出连到其 G 输入。
 
 ## build 指令格式
 
@@ -126,7 +133,8 @@ cp deploy/HanakoBridge.gha ~/AppData/Roaming/Grasshopper/Libraries/
 ## 已知坑点
 
 - **幽灵端口**：崩溃后 PID 4 会捕获端口，重启 Revit 释放
-- **求解卡死**：某些组件（PipeSurface 等）求解报错会导致循环死锁，需重启 Revit
+- **求解卡死**：PipeSurfaceEx 等组件求解报错会导致循环死锁，需重启 Revit
+- **PipeSurface**：必须显式连半径输入（端口1），默认半径 0 → X 标记/退化几何体
+- **Branch.P 类型限制**：Dispatch.A（Generic Data）→ Branch.P（Path）在 build 指令下不自动转换，需用索引法（Flatten+Series+Item）替代
 - **build 不清理旧组件**：每次 build 前确保画布干净
 - **build 的 wires 与 wire 指令不通用**：前者用组件 id，后者用完整 InstanceGuid
-- **RIR AddFloor 事务不可靠**：可能计算出数据但不提交
