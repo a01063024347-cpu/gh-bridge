@@ -32,7 +32,6 @@ namespace HanakoBridge
         private static Dictionary<string, Guid> _idMap = new Dictionary<string, Guid>();
 
         private static GH_Document _ghDoc;
-        private static bool _lastTidyToggle;
         private static volatile bool _solving;
         private static DateTime _solveStart;
         private static readonly object _cmdLock = new object();
@@ -46,16 +45,12 @@ namespace HanakoBridge
 
         protected override void SolveInstance(IGH_DataAccess DA) {
             _ghDoc = OnPingDocument();
-            // 整理按钮：拨动布尔开关触发
+            // 整理按钮：拨到 True 就触发整理
             bool tidyToggle = false;
             DA.GetData(0, ref tidyToggle);
-            if (tidyToggle && !_lastTidyToggle) {
-                _lastTidyToggle = true;
+            if (tidyToggle) {
                 _lastStatus = DoTidy();
-                DA.SetData(0, _lastStatus);
-                return;
             }
-            _lastTidyToggle = tidyToggle;
             var cmd = Interlocked.Exchange(ref _pendingCmd, null);
             if (cmd != null) {
                 _solving = true;
