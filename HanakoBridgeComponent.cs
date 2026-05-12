@@ -411,14 +411,16 @@ namespace HanakoBridge
                 if (def.ContainsKey("wires")) {
                     var wires = (ArrayList)def["wires"];
                     for (int wi = 0; wi < wires.Count; wi++) {
-                        var w = wires[wi];
+                        var wRaw = wires[wi];
+                        IList wl;
                         // 支持箭头语法: "r→cir.R" 或 "r.Number→cir.R"
-                        if (w is string) {
-                            var arrow = ParseArrowWire((string)w);
+                        if (wRaw is string) {
+                            var arrow = ParseArrowWire((string)wRaw);
                             if (arrow == null) continue;
-                            w = wires[wi] = new ArrayList { arrow.Item1, arrow.Item2, arrow.Item3, arrow.Item4 };
+                            wl = new ArrayList { arrow.Item1, arrow.Item2, arrow.Item3, arrow.Item4 };
+                        } else {
+                            wl = (IList)wRaw;
                         }
-                        var wl = (IList)w;
                         string fromId = (string)wl[0]; string toId = (string)wl[2];
                         int fromOut = ResolvePortIndex(wl[1], created, fromId, false);
                         int toIn = ResolvePortIndex(wl[3], created, toId, true);
