@@ -97,6 +97,9 @@ namespace HanakoBridge
                             case "wires":             return DoCheckWires();
                             case "scene":             return DoScene();
                             case "clear":             return DoClear();
+                            case "remove":           return DoRemove(body);
+                            case "disconnect":       return DoDisconnect(body);
+                            case "move":             return DoMove(body);
                             case "bake":             return DoBake();
                             case "wire":             return DoWire(body);
                             case "verify":             return DoVerify(body);
@@ -153,6 +156,9 @@ namespace HanakoBridge
                 else if (body.Contains("\"screenshot\"")) { result = DoScreenshot(); }
                 else if (body.Contains("\"canvas\"")) { result = DoCanvas(); }
                 else if (body.Contains("\"explain\"")) { result = DoExplain(body); }
+                else if (body.Contains("\"remove\"")) { result = DoRemove(body); }
+                else if (body.Contains("\"disconnect\"")) { result = DoDisconnect(body); }
+                else if (body.Contains("\"move\"")) { result = DoMove(body); }
                 else if ((body.Contains("\"build\"") || body.Contains("\"wire\"") || body.Contains("\"set\"")) && (body.Contains("\"wait\":false") || body.Contains("\"wait\": false"))) {
                     lock (_cmdLock) {
                         if (_solving) { var oldW = _pendingWait; if (oldW != null) oldW.WaitOne(5000); }
@@ -673,6 +679,91 @@ namespace HanakoBridge
 
         string JsonResult(bool success, string message) {
             return _json.Serialize(new { success, message });
+        }
+
+        // ==== REMOVE ====
+        string DoRemove(string body) {
+            var doc = _ghDoc; if (doc == null) return "no doc";
+            try {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                int count = 0;
+                if (def != null && def.ContainsKey("guids")) {
+                    var arr = (ArrayList)def["guids"];
+                    foreach (string g in arr) {
+                        foreach (var obj in doc.Objects) {
+                            if (obj is HanakoBridgeComponent) continue;
+                            if (obj.InstanceGuid.ToString().StartsWith(g)) {
+                                try { doc.RemoveObject(obj, false); count++; } catch { }
+                            }
+                        }
+                    }
+                }
+                return "removed:" + count;
+            } catch (Exception ex) { return "remove err:" + ex.Message; }
+        }
+
+        // ==== DISCONNECT ====
+        string DoDisconnect(string body) {
+            var doc = _ghDoc; if (doc == null) return "no doc";
+            try {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                if (!def.ContainsKey("wires")) return "need wires";
+                var wires = (ArrayList)def["wires"];
+                int count = 0;
+                foreach (var w in wires) {
+                    var wl = (IList)w;
+                    string fromGuid = (string)wl[0];
+                    string toGuid = (string)wl[2];
+                    int toPort = Convert.ToInt32(wl[3]);
+                    IGH_DocumentObject toObj = null;
+                    foreach (var obj in doc.Objects)
+                        if (obj.InstanceGuid.ToString() == toGuid) { toObj = obj; break; }
+                    if (toObj == null) continue;
+                    try {
+                        var toP = toObj.GetType().GetProperty("Params").GetValue(toObj, null);
+                        dynamic toPd = toP;
+                        var toParam = (IGH_Param)((IList)toPd.Input)[toPort];
+                        // 找到匹配的来源并移除
+                        for (int s = toParam.SourceCount - 1; s >= 0; s--) {
+                            var src = toParam.Sources[s];
+                            // 找 src 的父组件 GUID
+                            foreach (var o2 in doc.Objects) {
+                                try {
+                                    var pp = o2.GetType().GetProperty("Params").GetValue(o2, null);
+                                    if (pp != null) { dynamic dpp = pp; var ol = (IList)dpp.Output;
+                                        if (ol != null) for (int oj = 0; oj < ol.Count; oj++)
+                                            if (((IGH_Param)ol[oj]).InstanceGuid == src.InstanceGuid && o2.InstanceGuid.ToString() == fromGuid) {
+                                                toParam.RemoveSource(src); count++; break;
+                                            } } } catch { }
+                            }
+                        }
+                    } catch { }
+                }
+                return "disconnected:" + count;
+            } catch (Exception ex) { return "disconnect err:" + ex.Message; }
+        }
+
+        // ==== MOVE ====
+        string DoMove(string body) {
+            var doc = _ghDoc; if (doc == null) return "no doc";
+            try {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                if (!def.ContainsKey("positions")) return "need positions";
+                var posDict = (Dictionary<string, object>)def["positions"];
+                int count = 0;
+                foreach (var kv in posDict) {
+                    string guid = kv.Key;
+                    var pos = (IList)kv.Value;
+                    float x = Convert.ToSingle(pos[0]);
+                    float y = Convert.ToSingle(pos[1]);
+                    foreach (var obj in doc.Objects) {
+                        if (obj.InstanceGuid.ToString().StartsWith(guid)) {
+                            try { dynamic d = obj; d.Attributes.Pivot = new PointF(x, y); count++; } catch { }
+                        }
+                    }
+                }
+                return "moved:" + count;
+            } catch (Exception ex) { return "move err:" + ex.Message; }
         }
 
         // ==== CLEAR ====
