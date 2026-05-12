@@ -87,6 +87,11 @@ namespace HanakoBridge
                             case "wire":             return DoWire(body);
                             case "verify":             return DoVerify(body);
                             case "diag":              return DoDiag();
+                            case "cancel":           return "{\"ok\":true,\"action\":\"cancel\"}";
+                            case "describe":         return DoDescribe();
+                            case "screenshot":       return DoScreenshot();
+                            case "canvas":           return DoCanvas();
+                            case "explain":          return DoExplain(body);
                             default:                 return "?";
                         }
                     }
@@ -95,7 +100,19 @@ namespace HanakoBridge
                 // 回退：旧式 string.Contains 匹配
                 if (body.Contains("\"ping\"")) return "pong";
                 if (body.Contains("\"scan\"")) return DoScan();
+                if (body.Contains("\"cancel\"")) return "{\"ok\":true,\"action\":\"cancel\"}";
+                if (body.Contains("\"canvas\"")) return DoCanvas();
+                if (body.Contains("\"describe\"")) return DoDescribe();
+                if (body.Contains("\"screenshot\"")) return DoScreenshot();
+                if (body.Contains("\"explain\"")) return DoExplain(body);
+                if (body.Contains("\"wire\"")) return DoWire(body);
+                if (body.Contains("\"clear\"")) return DoClear();
+                if (body.Contains("\"scene\"")) return DoScene();
+                if (body.Contains("\"bake\"")) return DoBake();
+                if (body.Contains("\"diag\"")) return DoDiag();
                 if (body.Contains("\"build\"")) return DoBuild(body);
+                if (body.Contains("\"describe\"")) return DoDescribe();
+                if (body.Contains("\"describe\"")) return DoDescribe();
                 return "?";
             } catch (Exception ex) { return "ex:" + ex.Message; }
         }
@@ -124,6 +141,14 @@ namespace HanakoBridge
                 int read = req.InputStream.Read(buf, 0, buf.Length);
                 string body = Encoding.UTF8.GetString(buf, 0, read);
                 if (body.Contains("\"ping\"")) { result = "{\"ok\":true}"; }
+                else if (body.Contains("\"cancel\"")) { result = "{\"ok\":true,\"action\":\"cancel\"}"; }
+                else if (body.Contains("\"canvas\"")) { result = DoCanvas(); }
+                else if (body.Contains("\"describe\"")) { result = DoDescribe(); }
+                else if (body.Contains("\"screenshot\"")) { result = DoScreenshot(); }
+                else if (body.Contains("\"explain\"")) { result = DoExplain(body); }
+                else if (body.Contains("\"scene\"")) { result = DoScene(); }
+                else if (body.Contains("\"bake\"")) { result = DoBake(); }
+                else if (body.Contains("\"diag\"")) { result = DoDiag(); }
                 else {
                     // 所有指令统一走队列 + SolveInstance 路径
                     _pendingCmd = body;
@@ -955,8 +980,15 @@ namespace HanakoBridge
                 var rDoc = Rhino.RhinoDoc.ActiveDoc;
                 if (rDoc == null) return _json.Serialize(new { error = "no rhino doc" });
                 var v = rDoc.Views.ActiveView;
+                if (v == null) {
+                    var views = rDoc.Views.GetViewList(true, false);
+                    if (views != null && views.Length > 0) v = views[0];
+                }
                 if (v == null) return _json.Serialize(new { error = "no view" });
-                var bmp = v.CaptureToBitmap();
+                var bmp = v.CaptureToBitmap(new System.Drawing.Size(800, 600));
+                if (bmp == null) {
+                    try { bmp = v.CaptureToBitmap(); } catch { }
+                }
                 if (bmp == null) return _json.Serialize(new { error = "capture failed" });
                 string p = "D:/agents/-A-hanako/screenshot.png";
                 bmp.Save(p, System.Drawing.Imaging.ImageFormat.Png);
