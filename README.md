@@ -2,9 +2,11 @@
 
 **AI Agent 驱动的 Grasshopper 桥接插件 — 让大语言模型直接在 GH 画布上生成、连线、求解电池组。**
 
-gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP 服务端。AI Agent 通过 18 个 RESTful 指令动态创建组件、连线、布位、触发求解，实现从自然语言到参数化模型的全自动链路。
+gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP 服务端。AI Agent 通过 25+ 个 RESTful 指令动态创建组件、连线、布位、触发求解，实现从自然语言到参数化模型的全自动链路。
 
 配合 Rhino.Inside.Revit（RIR），可将生成的几何直接推入 Revit 文档。
+
+> **当前稳定版本**：基于 2026-05-09 备份恢复，所有功能已验证通过。
 
 ## 架构
 
@@ -22,119 +24,138 @@ gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP �
 
 所有操作走 GH 电池组，没有直推 API。组件在画布上可视化呈现，不黑箱。
 
+## 核心特性
+
+| 特性 | 说明 | 加入版本 |
+|------|------|---------|
+| 名称→GUID 翻译 | build 的 guid 字段支持组件名（如 "Number Slider"），桥端自动解析 | 2026-05-12 |
+| 端口名匹配 | wire 支持端口名（如 "R"）替代端口号，大小写不敏感+模糊匹配 | 2026-05-12 |
+| 自动布局 | build 不设 positions 时按连线拓扑深度自动排列 | 2026-05-12 |
+| 异步模式 | build/wire/set 加 `"wait":false` 跳过解算等待，秒返 GUID | 2026-05-12 |
+| 双求解 | build 后自动触发第二轮求解保证数据过线 | 2026-05-12 |
+| 画布快照 | canvas 指令返回完整组件状态 | 2026-05-12 |
+| 逻辑解释 | explain 指令追踪连线关系返回自然语言描述 | 2026-05-12 |
+| 几何描述 | describe 指令 bake 后分析 Rhino 对象：尺寸、形状、渐变方向 | 2026-05-12 |
+| 视图截图 | screenshot 指令截取 Rhino 视图保存为 PNG | 2026-05-12 |
+
 ## 指令一览
 
+### 基础操作
 | 指令 | 用途 |
 |------|------|
-| `ping` | 心跳检测 |
+| `ping` | 心跳检测，异步模式下返回上次 build 结果 |
+| `cancel` | 取消当前求解 + 触发新求解 |
+| `scene` | 三边状态总览（Rhino/GH/Revit 元素数） |
+| `clear` | 清空画布（保留桥自身） |
+
+### 组件查询与检查
+| 指令 | 用途 |
+|------|------|
 | `scan` | 扫描 GH 组件代理 |
 | `builddb` | 建立完整组件数据库 |
 | `qdb` | 按关键词搜索组件 |
-| `inspect` | 查看组件的输入输出接口 |
+| `inspect` | 查看组件输入输出接口（支持名称或 GUID） |
 | `verify` | 预检组件+连线计划 |
-| `build` | 创建组件、连线、布位（需设 positions） |
-| `wire` | 分步连线（用完整 InstanceGuid） |
-| `set` | 设置组件内部参数（Branch路径、Dispatch模式等） |
-| `gettype` | 从实例GUID反查类型GUID |
-| `bake` | 烘焙 GH 输出到 Rhino 文档 |
-| `clear` | 清空画布（保留桥自身） |
-| `cancel` | 取消当前求解 + 触发新求解 |
-| `scene` | 三边状态总览（Rhino/GH/Revit） |
 | `wires` | 检查画布连线状态 |
+| `canvas` | 画布完整快照：组件/端口/连线/持久数据 |
+| `explain` | 传入 GUID 列表，返回自然语言逻辑链解释 |
+| `gettype` | 从实例GUID反查类型GUID |
+
+### 构建与连线
+| 指令 | 用途 |
+|------|------|
+| `build` | 创建组件、连线（支持名称、端口名、自动布局、async） |
+| `wire` | 分步连线（支持端口名、用完整 InstanceGuid） |
+| `set` | 设置组件内部参数（Domain、Expression、Branch路径等） |
+
+### 诊断与验证
+| 指令 | 用途 |
+|------|------|
 | `diag` | 诊断组件运行时错误 |
 | `diagnose` | 诊断退化几何体 |
 | `geomcheck` | 遍历几何输出，检测零长度/无效Brep/零体积 |
+| `describe` | Bake 到 Rhino，分析对象尺寸、形状、渐变方向 |
+
+### 输出与可视化
+| 指令 | 用途 |
+|------|------|
+| `bake` | 烘焙 GH 输出到 Rhino 文档 |
+| `screenshot` | 截取 Rhino 视图存为 PNG |
+| `query` | 查询 Rhino 对象列表 |
+| `loadgh` | 分析 .gh 文件依赖 |
+
+### Revit 集成
+| 指令 | 用途 |
+|------|------|
 | `check` | 检测 RIR 连接 + Revit 元素数 |
 | `get_levels` | 查询 Revit 标高 |
 | `get_families` | 查询 Revit 族类型 |
 | `get_wall_types` | 查询墙类型 |
 | `get_active_view` | 查询当前激活视图 |
 
-## 使用流程
-
-### 标准流程
-
-```
-1. scene        查看画布状态
-2. clear        如有残留组件
-3. builddb      建立组件数据库（会话中一次）
-4. qdb          确认所需组件存在
-5. build        分段创建电池组（每段10-15组件）
-6. cancel       触发再求解（two-solve机制）
-7. diagnose     确认组件计算正常
-8. geomcheck    检测退化几何体（零长度曲线/无效Brep/X标记）
-9. bake         烘焙到 Rhino
-```
-
-### 分步构建（推荐大电池组）
-
-```
-1. build                   创建首批组件
-2. wire (用 InstanceGuid)  加跨组件连线
-3. build (standalone)      加新组件
-4. wire                    连到已有组件
-```
-
-### 推入 Revit
-
-在 build 中包含 `AddDirectShapeGeometry`（GUID: `0bfbda45`），将几何输出连到其 G 输入。
-
 ## build 指令格式
 
 ```json
 {
   "action": "build",
+  "wait": false,
   "components": [
-    {"id": "s1", "guid": "57da07bd", "val": 5000, "nick": "Radius"},
-    {"id": "quad", "guid": "361790d6"}
+    {"id": "r", "guid": "Number Slider", "val": 5, "name": "半径"},
+    {"id": "cir", "guid": "Circle"}
   ],
-  "wires": [["s1", 0, "quad", 1]],
-  "positions": {"s1": [0, 0], "quad": [250, -100]}
+  "wires": [
+    ["r", "Number", "cir", "R"]
+  ]
 }
 ```
 
-- `id`: 组件标识符，供 wires/positions 引用
-- `guid`: GH 组件的 8 位 GUID 前缀
+- `guid`: 支持 8 位 GUID 前缀或组件名（如 "Number Slider"、"Circle"）
+- `wait`: `false` 跳过解算等待，秒返 GUID（推荐）
 - `val`: Number Slider 数值（可选）
-- `nick`: 昵称（可选）
-- `wires`: `[来源id, 输出索引, 目标id, 输入索引]`
-- `positions`: `{id: [x, y]}` 像素坐标
+- `name`: 组件中文名称（可选）
+- `wires`: `[来源id, 输出端口, 目标id, 输入端口]`，端口支持数字或名称
+- `positions`: 可选，不设时自动按拓扑布局
 
 ## 开发
 
 ### 环境要求
 
-- Visual Studio 2022 或 `dotnet build`
 - .NET Framework 4.8
-- Rhino 6/7 + Grasshopper
-- Rhino.Inside.Revit（用于 Revit 推送）
+- Rhino 7 + Grasshopper + Rhino.Inside.Revit
+- Visual Studio 2022 或 `dotnet build`
 
-### 编译
+### 编译与部署
 
 ```bash
 cd gh-bridge
-dotnet build -c Release
+dotnet build
+# 编译结果自动复制到 deploy/
+
+# 部署（需关闭 Rhino/GH）
+copy deploy\HanakoBridge.gha %APPDATA%\Grasshopper\Libraries\
+copy deploy\HanakoBridge.dll %APPDATA%\Grasshopper\Libraries\
 ```
 
-编译结果自动复制到 `deploy/` 目录。
+### 端口范围
 
-### 部署
+18080-18100，动态分配。端口号写入 `port.txt`。
 
-```bash
-# 替换 GH 组件库中的 .gha
-cp deploy/HanakoBridge.gha ~/AppData/Roaming/Grasshopper/Libraries/
-# **替换前必须关闭 Rhino/Grasshopper**
+## 已知限制
+
+- **清空含 RIR 组件的画布会触发 Revit 弹窗**：使用 `revit-dialog-closer.sh` 关闭
+- **4Point Surface 四点共面时会生成退化面**：至少两个角的 Z 值设为非零
+- **异步模式下 ping 轮询获取 build 结果**
+- **wire 指令用 InstanceGuid（36字符），不是 build 返回的 id**
+
+## 项目结构
+
 ```
-
-### .gitignore
-
-仓库排除：`bin/`、`obj/`、`backup*/`、`port.txt`、`.vs/`。
-
-## 已知坑点
-
-- **幽灵端口**：崩溃后 PID 4 会捕获端口，重启 Revit 释放
-- **求解卡死**：PipeSurfaceEx 等组件求解报错会导致循环死锁，需重启 Revit
-- **PipeSurface**：必须显式连半径输入（端口1），默认半径 0 → X 标记/退化几何体
-- **Branch.P 类型限制**：Dispatch.A（Generic Data）→ Branch.P（Path）在 build 指令下不自动转换，需用索引法（Flatten+Series+Item）替代
-- **build 不清理旧组件**：每次 build 前确保画布干净
-- **build 的 wires 与 wire 指令不通用**：前者用组件 id，后者用完整 InstanceGuid
+gh-bridge/
+├── HanakoBridgeComponent.cs   # 核心源码（单文件）
+├── HanakoBridge.csproj        # 项目文件
+├── README.md                  # 本文档
+├── AGENTS.md                  # Agent 使用指南
+├── deploy.bat                 # 部署脚本
+├── revit-dialog-closer.sh     # Revit 弹窗关闭工具
+└── port.txt                   # 运行时端口号
+```
