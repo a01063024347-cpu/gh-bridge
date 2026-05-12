@@ -478,8 +478,8 @@ namespace HanakoBridge
                         _idMap[kv.Key] = obj.InstanceGuid;
                     } catch { }
                 }
-                // 不在这里调度求解——GH 会自动检测组件变更并触发求解
-                // 避免 ScheduleSolution 导致无限求解循环
+                // 跨批次连线：标记全部组件为 dirty，强制下一轮解算传播数据
+                try { doc.ExpireSolution(); } catch { }
                 return _json.Serialize(new { result = "built:" + created.Count + " comps", components = idMap });
             } catch (Exception ex) { return "build err:" + ex.Message; }
         }
