@@ -30,6 +30,8 @@ namespace HanakoBridge
         private static string _asyncResult;
         private static volatile bool _secondSolve;
         private static readonly object _cmdLock = new object();
+        private static List<Tuple<IGH_Param, IGH_Param>> _deferredPaths = new List<Tuple<IGH_Param, IGH_Param>>();
+        private static volatile bool _hasDeferredPaths;
         private static readonly JavaScriptSerializer _json = new JavaScriptSerializer();
         public static Dictionary<string, string> ProxyDB;
         public static Dictionary<string, string> CompDB;
@@ -46,11 +48,24 @@ namespace HanakoBridge
 
         protected override void SolveInstance(IGH_DataAccess DA) {
             _ghDoc = OnPingDocument();
+            if (_hasDeferredPaths) {
+                var deferred = Interlocked.Exchange(ref _deferredPaths, new List<Tuple<IGH_Param, IGH_Param>>());
+                _hasDeferredPaths = false;
+                DA.SetData(0, "deferred:" + deferred.Count);
+                return;
+            }
             var cmd = Interlocked.Exchange(ref _pendingCmd, null);
             if (cmd != null) {
-                _lastStatus = Exec(cmd);
-                var w = Interlocked.Exchange(ref _pendingWait, null);
-                if (w != null) { _pendingResult = _lastStatus; w.Set(); }
+                _solving = true; _solveStart = DateTime.Now;
+                try { _lastStatus = Exec(cmd); if (_asyncBuild) { _asyncResult = _lastStatus; _asyncBuild = false; } }
+                catch (Exception ex) { _lastStatus = "exec_err:" + ex.Message; }
+                _solving = false;
+                var wr = Interlocked.Exchange(ref _pendingWait, null);
+                if (wr != null) { _pendingResult = _lastStatus; wr.Set(); }
+                if (cmd.Contains("\"build\"") && !_secondSolve) {
+                    _secondSolve = true; _pendingCmd = null;
+                    try { var cv2 = Grasshopper.Instances.ActiveCanvas; if (cv2 != null) { var d2 = cv2.Document; if (d2 != null) d2.ScheduleSolution(1); } } catch { }
+                } else { _secondSolve = false; }
             }
             if (!_running) {
                 _running = true;
@@ -58,6 +73,7 @@ namespace HanakoBridge
                 _lisThread = new Thread(LisRun) { IsBackground = true };
                 _lisThread.Start();
             }
+            if (_solving && (DateTime.Now - _solveStart).TotalSeconds > 60) { _solving = false; _lastStatus = "timeout"; }
             DA.SetData(0, _lastStatus);
         }
 
@@ -119,13 +135,13 @@ namespace HanakoBridge
                 if (body.Contains("\"bake\"")) return DoBake();
                 if (body.Contains("\"diag\"")) return DoDiag();
                 if (body.Contains("\"diagnose\"")) return DoDiagnose();
-                if (body.Contains("\"query\"")) return DoQuery();
-                if (body.Contains("\"loadgh\"")) return DoLoadgh();
-                if (body.Contains("\"set\"")) return DoSet();
-                if (body.Contains("\"gettype\"")) return DoGettype();
+                if (body.Contains("\"query\"")) return DoQuery(body);
+                if (body.Contains("\"loadgh\"")) return DoLoadGH(body);
+                if (body.Contains("\"set\"")) return DoSet(body);
+                if (body.Contains("\"gettype\"")) return DoGetType(body);
                 if (body.Contains("\"values\"")) return DoValues();
-                if (body.Contains("\"createpanel\"")) return DoCreatepanel();
-                if (body.Contains("\"geomcheck\"")) return DoGeomcheck();
+                if (body.Contains("\"createpanel\"")) return DoCreatePanel(body);
+                if (body.Contains("\"geomcheck\"")) return DoGeomCheck();
                 if (body.Contains("\"build\"")) return DoBuild(body);
                 if (body.Contains("\"describe\"")) return DoDescribe();
                 if (body.Contains("\"describe\"")) return DoDescribe();
@@ -179,8 +195,15 @@ namespace HanakoBridge
                             } catch { }
                         }));
                     } catch { }
-                    if (w.WaitOne(15000)) result = _pendingResult ?? "nope";
+                    if (w.WaitOne(60000)) result = _pendingResult ?? "nope";
                     else result = "queued";
+                    // 双求解：build 后触发第二轮让数据流过连线
+                    if (body.Contains("\"build\"") && result != null && !result.Contains("err")) {
+                        try {
+                            var cv = Grasshopper.Instances.ActiveCanvas;
+                            if (cv != null) { var d = cv.Document; if (d != null) { d.ExpireSolution(); d.ScheduleSolution(1); } }
+                        } catch { }
+                    }
                 }
             } else result = "{\"ok\":false}";
             var rb = Encoding.UTF8.GetBytes(result);
