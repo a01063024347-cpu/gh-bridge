@@ -103,12 +103,12 @@ namespace HanakoBridge
         void LisRun() {
             try {
                 int port = 0;
-                for (int p = 14880; p < 15000; p++) {
+                for (int p = 18080; p < 18100; p++) {
                     try { var l = new HttpListener(); l.Prefixes.Add("http://localhost:" + p + "/"); l.Start(); _listener = l; port = p; break; } catch { }
                 }
                 if (port == 0) { _lastStatus = "NO PORT"; return; }
                 _lastStatus = ":" + port;
-                try { File.WriteAllText("D:/-A-hanako/gh-bridge/port.txt", port.ToString()); } catch { }
+                try { File.WriteAllText("D:/agents/-A-hanako/gh-bridge/port.txt", port.ToString()); } catch { }
                 while (true) {
                     var ctx = _listener.GetContext();
                     try { Reply(ctx); } catch { try { ctx.Response.OutputStream.Close(); } catch { } }
