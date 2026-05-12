@@ -842,6 +842,7 @@ namespace HanakoBridge
                     ir[id] = cr[d]; cr[d]++;
                 }
                 int count = 0;
+                // 第一遍：按拓扑深度分配初始位置
                 foreach (var obj in comps) {
                     string id = idMap[obj.InstanceGuid];
                     int col = depth.ContainsKey(id) ? depth[id] : maxDepth + 1;
@@ -849,6 +850,29 @@ namespace HanakoBridge
                     float x = col * 250f + 50f;
                     float y = row * 60f + 50f;
                     try { dynamic d = obj; d.Attributes.Pivot = new PointF(x, y); count++; } catch { }
+                }
+                // 第二遍：检测重叠并调整——同列组件垂直间距不低于 50px
+                var cols = new Dictionary<int, List<Tuple<IGH_DocumentObject, float>>>();
+                foreach (var obj in comps) {
+                    string id = idMap[obj.InstanceGuid];
+                    int col = depth.ContainsKey(id) ? depth[id] : maxDepth + 1;
+                    if (!cols.ContainsKey(col)) cols[col] = new List<Tuple<IGH_DocumentObject, float>>();
+                    float y = 50f;
+                    try { y = obj.Attributes.Pivot.Y; } catch { }
+                    cols[col].Add(Tuple.Create(obj, y));
+                }
+                foreach (var kv in cols) {
+                    var items = kv.Value.OrderBy(t => t.Item2).ToList();
+                    float curY = 50f;
+                    foreach (var item in items) {
+                        float objH = 80f; // 估算组件高度
+                        try {
+                            var b = item.Item1.Attributes.Bounds;
+                            objH = Math.Max(60f, b.Height);
+                        } catch { }
+                        try { dynamic d = item.Item1; d.Attributes.Pivot = new PointF(item.Item1.Attributes.Pivot.X, curY); } catch { }
+                        curY += objH + 30f; // 每组件间距 30px
+                    }
                 }
                 return "tidy:" + count;
             } catch (Exception ex) { return "tidy err:" + ex.Message; }
