@@ -134,6 +134,7 @@ namespace HanakoBridge
                             case "describe":         return DoDescribe();
                             case "screenshot":       return DoScreenshot();
                             case "redraw":           return DoRedraw();
+                            case "setval":           return DoSetVal(body);
                             case "canvas":           return DoCanvas();
                             case "explain":          return DoExplain(body);
                             case "query":           return DoQuery(body);
@@ -1763,6 +1764,23 @@ string DoReadFile(string body) {
             catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
         }
 
+        string DoSetVal(string body) {
+            var doc = _ghDoc; if (doc == null) return "{\"error\":\"no doc\"}";
+            try {
+                var def = _json.Deserialize<Dictionary<string, object>>(body);
+                string guid = (string)def["guid"];
+                double val = Convert.ToDouble(def["val"]);
+                foreach (var obj in doc.Objects) {
+                    if (obj.InstanceGuid.ToString().StartsWith(guid)) {
+                        try { dynamic d = obj; d.SetSliderValue((decimal)val); }
+                        catch { try { dynamic d2 = obj; d2.SetValue((decimal)val); } catch { } }
+                        return "{\"ok\":true}";
+                    }
+                }
+                return "{\"error\":\"not found\"}";
+            } catch (Exception ex) { return "{\"error\":\"" + ex.Message + "\"}"; }
+        }
+
         // ==== REDRAW ====
         string DoRedraw() {
             try {
@@ -1781,14 +1799,13 @@ string DoReadFile(string body) {
             {
                 var rDoc = Rhino.RhinoDoc.ActiveDoc;
                 if (rDoc == null) return _json.Serialize(new { error = "no rhino doc" });
-                var v = rDoc.Views.ActiveView;
-                if (v == null) return _json.Serialize(new { error = "no view" });
-                var bmp = v.CaptureToBitmap();
-                if (bmp == null) return _json.Serialize(new { error = "capture failed" });
                 string p = "D:/agents/-A-hanako/screenshot.png";
-                bmp.Save(p, System.Drawing.Imaging.ImageFormat.Png);
-                try { v.Redraw(); } catch { }
-                return _json.Serialize(new { ok = true, path = p, width = bmp.Width, height = bmp.Height });
+                // 用 Rhino 命令行截屏，避开 CaptureToBitmap 在 RIR 的锁死
+                string script = "-_ViewCaptureToFile " + p + " _Enter";
+                Rhino.RhinoApp.RunScript(script, false);
+                System.Threading.Thread.Sleep(500);
+                if (!System.IO.File.Exists(p)) return _json.Serialize(new { error = "capture failed" });
+                return _json.Serialize(new { ok = true, path = p });
             }
             catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
         }
