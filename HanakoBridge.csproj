@@ -34,6 +34,7 @@
     <Reference Include="System.Windows.Forms" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Xml" />
     <Reference Include="RhinoCommon">
       <HintPath>C:\Program Files\Rhino 7\System\RhinoCommon.dll</HintPath>
       <Private>False</Private>

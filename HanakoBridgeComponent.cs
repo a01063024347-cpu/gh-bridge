@@ -8,6 +8,7 @@ using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Xml;
 using System.Web.Script.Serialization;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
@@ -127,6 +128,7 @@ namespace HanakoBridge
                             case "diag":              return DoDiag();
                             case "diagnose":          return DoDiagnose();
                             case "cancel":           return "{\"ok\":true,\"action\":\"cancel\"}";
+                            case "readfile":         return DoReadFile(body);
                             case "proxies":          return DoProxies(body);
                             case "cycle":            return DoCycle(body);
                             case "describe":         return DoDescribe();
@@ -1661,6 +1663,39 @@ namespace HanakoBridge
                 return sb.ToString();
             }
             catch (Exception ex) { return "explain err:" + ex.Message; }
+        }
+
+        string DoReadFile(string body) {
+            string path = "";
+            try { var d = _json.Deserialize<Dictionary<string, object>>(body); if (d != null && d.ContainsKey("path")) path = (string)d["path"]; } catch { }
+            if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return "{\"error\":\"file not found\"}";
+            try {
+                var archive = new GH_IO.Serialization.GH_Archive();
+                if (!archive.ReadFromFile(path)) return "{\"error\":\"read failed\"}";
+                var comps = new List<object>();
+                // serialize to temp XML and parse
+                string tmpXml = System.IO.Path.GetTempFileName() + ".ghx";
+                archive.WriteToFile(tmpXml, false, false);
+                var xmlDoc = new System.Xml.XmlDocument();
+                xmlDoc.Load(tmpXml);
+                var proxies = xmlDoc.SelectNodes("//chunk[@name='ObjectProxy']");
+                if (proxies != null) {
+                    foreach (System.Xml.XmlNode node in proxies) {
+                        var items = node.SelectNodes("items/item");
+                        string guid = "", cname = "", cguid = "", ctype = "";
+                        if (items != null) foreach (System.Xml.XmlNode item in items) {
+                            var attrName = item.Attributes?["name"]?.Value ?? "";
+                            if (attrName == "GUID") guid = item.InnerText;
+                            if (attrName == "Name") cname = item.InnerText;
+                            if (attrName == "ComponentGuid") cguid = item.InnerText;
+                            if (attrName == "Type") ctype = item.InnerText;
+                        }
+                        comps.Add(new { guid = guid.Substring(0, Math.Min(8, guid.Length)), name = cname, componentGuid = cguid.Substring(0, Math.Min(8, cguid.Length)), type = ctype });
+                    }
+                }
+                try { System.IO.File.Delete(tmpXml); } catch { }
+                return _json.Serialize(new { file = path, totalComponents = comps.Count, components = comps });
+            } catch (Exception ex) { return "{\"error\":\"" + ex.Message + "\"}"; }
         }
 
         string DoProxies(string body) {
