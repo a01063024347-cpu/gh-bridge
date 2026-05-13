@@ -127,6 +127,7 @@ namespace HanakoBridge
                             case "diag":              return DoDiag();
                             case "diagnose":          return DoDiagnose();
                             case "cancel":           return "{\"ok\":true,\"action\":\"cancel\"}";
+                            case "cycle":            return DoCycle(body);
                             case "describe":         return DoDescribe();
                             case "screenshot":       return DoScreenshot();
                             case "canvas":           return DoCanvas();
@@ -478,14 +479,8 @@ namespace HanakoBridge
                         _idMap[kv.Key] = obj.InstanceGuid;
                     } catch { }
                 }
-                // 异步批量求解：梯度间隔让数据逐层传播
-                try {
-                    doc.ExpireSolution();
-                    for (int i = 0; i < 8; i++) {
-                        int ii = i;
-                        doc.ScheduleSolution(1 + ii * 2, (d) => { try { d.NewSolution(false); } catch { } });
-                    }
-                } catch { }
+                // 标记全部为 dirty，配合 cycle 指令逐层传播
+                try { doc.ExpireSolution(); } catch { }
                 return _json.Serialize(new { result = "built:" + created.Count + " comps", components = idMap });
             } catch (Exception ex) { return "build err:" + ex.Message; }
         }
@@ -1662,6 +1657,20 @@ namespace HanakoBridge
                 return sb.ToString();
             }
             catch (Exception ex) { return "explain err:" + ex.Message; }
+        }
+
+        // ==== CYCLE ====
+        string DoCycle(string body) {
+            int count = 5;
+            try {
+                var d = _json.Deserialize<Dictionary<string, object>>(body);
+                if (d != null && d.ContainsKey("count")) count = Convert.ToInt32(d["count"]);
+            } catch { }
+            var doc = _ghDoc; if (doc == null) return "{\"error\":\"no doc\"}";
+            for (int i = 0; i < count; i++) {
+                doc.ScheduleSolution(1 + i * 2, (d2) => { try { d2.NewSolution(false); } catch { } });
+            }
+            return "{\"ok\":true,\"cycles\":" + count + "}";
         }
 
         // ==== DESCRIBE ====
