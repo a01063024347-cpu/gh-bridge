@@ -133,6 +133,7 @@ namespace HanakoBridge
                             case "cycle":            return DoCycle(body);
                             case "describe":         return DoDescribe();
                             case "screenshot":       return DoScreenshot();
+                            case "redraw":           return DoRedraw();
                             case "canvas":           return DoCanvas();
                             case "explain":          return DoExplain(body);
                             case "query":           return DoQuery(body);
@@ -1760,6 +1761,17 @@ string DoReadFile(string body) {
                 return _json.Serialize(new { total = results.Count, results });
             }
             catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
+        }
+
+        // ==== REDRAW ====
+        string DoRedraw() {
+            try {
+                var rDoc = Rhino.RhinoDoc.ActiveDoc;
+                if (rDoc == null) return "{\"error\":\"no rhino doc\"}";
+                var v = rDoc.Views.ActiveView;
+                if (v != null) { v.Redraw(); Rhino.RhinoApp.RunScript("_Zoom _Extents", false); }
+                return "{\"ok\":true}";
+            } catch (Exception ex) { return "{\"error\":\"" + ex.Message + "\"}"; }
         }
 
         // ==== SCREENSHOT ====
