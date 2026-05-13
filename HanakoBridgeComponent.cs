@@ -1770,13 +1770,14 @@ namespace HanakoBridge
         {
             try { var g = new Guid(input); var r = CI(input); if (r != null) return (IGH_DocumentObject)r; } catch { }
             if (input.Length >= 8) { try { var r = CI(input); if (r != null) return (IGH_DocumentObject)r; } catch { } }
+            // FindObjectByName 优先于 CompDB，防止 CompDB 映射到过时的代理
+            try { var proxy = Grasshopper.Instances.ComponentServer.FindObjectByName(input, true, true); if (proxy != null) { try { return (IGH_DocumentObject)CI(proxy.Guid.ToString().Substring(0, 8)); } catch { } } } catch { }
             if (CompDB != null)
             {
                 string key = input.ToLowerInvariant();
                 foreach (var kv in CompDB) { string name = kv.Value; int pipe = name.IndexOf('|'); if (pipe > 0) name = name.Substring(0, pipe); if (name.ToLowerInvariant() == key) { try { return (IGH_DocumentObject)CI(kv.Key); } catch { } } }
                 foreach (var kv in CompDB) { string name = kv.Value; int pipe = name.IndexOf('|'); if (pipe > 0) name = name.Substring(0, pipe); if (name.ToLowerInvariant().Contains(key)) { try { return (IGH_DocumentObject)CI(kv.Key); } catch { } } }
             }
-            try { var proxy = Grasshopper.Instances.ComponentServer.FindObjectByName(input, true, true); if (proxy != null) { try { return (IGH_DocumentObject)CI(proxy.Guid.ToString().Substring(0, 8)); } catch { } } } catch { }
             return null;
         }
 
