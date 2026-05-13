@@ -127,6 +127,7 @@ namespace HanakoBridge
                             case "diag":              return DoDiag();
                             case "diagnose":          return DoDiagnose();
                             case "cancel":           return "{\"ok\":true,\"action\":\"cancel\"}";
+                            case "proxies":          return DoProxies(body);
                             case "cycle":            return DoCycle(body);
                             case "describe":         return DoDescribe();
                             case "screenshot":       return DoScreenshot();
@@ -426,12 +427,15 @@ namespace HanakoBridge
                         int fromOut = ResolvePortIndex(wl[1], created, fromId, false);
                         int toIn = ResolvePortIndex(wl[3], created, toId, true);
                         if (fromOut < 0 || toIn < 0) continue;
-                        // 先从本次 build 的 created 字典找，再从画布上已有的组件找
+                        // 先从本次 build 的 created 字典找，再从 _idMap 找，最后按 InstanceGuid 全量搜画布
                         object fromObj = null, toObj = null;
-                        if (created.ContainsKey(fromId)) fromObj = created[fromId];
-                        else if (_idMap.ContainsKey(fromId)) { foreach (var obj in doc.Objects) { try { if (obj.InstanceGuid == _idMap[fromId]) { fromObj = obj; break; } } catch { } } }
-                        if (created.ContainsKey(toId)) toObj = created[toId];
-                        else if (_idMap.ContainsKey(toId)) { foreach (var obj in doc.Objects) { try { if (obj.InstanceGuid == _idMap[toId]) { toObj = obj; break; } } catch { } } }
+                        foreach (var pair in new[] { new { id = fromId, isFrom = true }, new { id = toId, isFrom = false } }) {
+                            object found = null;
+                            if (created.ContainsKey(pair.id)) found = created[pair.id];
+                            else if (_idMap.ContainsKey(pair.id)) { foreach (var obj in doc.Objects) { try { if (obj.InstanceGuid == _idMap[pair.id]) { found = obj; break; } } catch { } } }
+                            if (found == null && pair.id.Length >= 32) { try { var g = new Guid(pair.id); foreach (var obj in doc.Objects) { try { if (obj.InstanceGuid == g) { found = obj; break; } } catch { } } } catch { } }
+                            if (pair.isFrom) fromObj = found; else toObj = found;
+                        }
                         if (fromObj == null || toObj == null) continue;
                         try {
                             var fromObj2 = fromObj; var toObj2 = toObj;
@@ -1657,6 +1661,20 @@ namespace HanakoBridge
                 return sb.ToString();
             }
             catch (Exception ex) { return "explain err:" + ex.Message; }
+        }
+
+        string DoProxies(string body) {
+            string filter = "";
+            try { var d = _json.Deserialize<Dictionary<string, object>>(body); if (d != null && d.ContainsKey("q")) filter = (string)d["q"]; } catch { }
+            var items = new List<object>();
+            string q = filter.ToLowerInvariant();
+            foreach (var p in Grasshopper.Instances.ComponentServer.ObjectProxies) {
+                string name = (p.Desc?.Name ?? "").ToLowerInvariant();
+                string tname = p.GetType().Name.ToLowerInvariant();
+                if (q.Length > 0 && !name.Contains(q) && !tname.Contains(q)) continue;
+                items.Add(new { g = p.Guid.ToString().Substring(0,8), n = p.Desc?.Name ?? "?", t = p.GetType().Name });
+            }
+            return _json.Serialize(new { total = items.Count, items = items.Take(50) });
         }
 
         // ==== CYCLE ====
