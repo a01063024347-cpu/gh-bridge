@@ -1755,6 +1755,7 @@ namespace HanakoBridge
                 if (bmp == null) return _json.Serialize(new { error = "capture failed" });
                 string p = "D:/agents/-A-hanako/screenshot.png";
                 bmp.Save(p, System.Drawing.Imaging.ImageFormat.Png);
+                try { v.Redraw(); } catch { }
                 return _json.Serialize(new { ok = true, path = p, width = bmp.Width, height = bmp.Height });
             }
             catch (Exception ex) { return _json.Serialize(new { error = ex.Message }); }
