@@ -1,0 +1,585 @@
+{
+  "components": {
+    "3a2f0491": {
+      "name": "Circle",
+      "compGuid": "807b86e3",
+      "instanceGuid": "3a2f0491"
+    },
+    "5298352a": {
+      "name": "Panel",
+      "compGuid": "59e0b89a",
+      "instanceGuid": "5298352a"
+    },
+    "6b8b9e52": {
+      "name": "Move",
+      "compGuid": "e9eb1dcf",
+      "instanceGuid": "6b8b9e52"
+    },
+    "4e497f5b": {
+      "name": "Unit Z",
+      "compGuid": "9103c240",
+      "instanceGuid": "4e497f5b"
+    },
+    "efc8f9b6": {
+      "name": "Series",
+      "compGuid": "e64c5fb1",
+      "instanceGuid": "efc8f9b6"
+    },
+    "b2aba699": {
+      "name": "Panel",
+      "compGuid": "59e0b89a",
+      "instanceGuid": "b2aba699"
+    },
+    "acc96084": {
+      "name": "Panel",
+      "compGuid": "59e0b89a",
+      "instanceGuid": "acc96084"
+    },
+    "3aa763a6": {
+      "name": "Bifocals",
+      "compGuid": "aced9701",
+      "instanceGuid": "3aa763a6"
+    },
+    "ab3d9f79": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "ab3d9f79"
+    },
+    "62d1e467": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "62d1e467"
+    },
+    "b11e3e63": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "b11e3e63"
+    },
+    "6f1cd0bd": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "6f1cd0bd"
+    },
+    "c6fe6c32": {
+      "name": "Area",
+      "compGuid": "2e205f24",
+      "instanceGuid": "c6fe6c32"
+    },
+    "88a3150c": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "88a3150c"
+    },
+    "2330dc2e": {
+      "name": "Scale",
+      "compGuid": "4d2a06bd",
+      "instanceGuid": "2330dc2e"
+    },
+    "b9d1bdac": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "b9d1bdac"
+    },
+    "6557eb4d": {
+      "name": "Graph Mapper",
+      "compGuid": "bc984576",
+      "instanceGuid": "6557eb4d"
+    },
+    "248c4736": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "248c4736"
+    },
+    "d417feab": {
+      "name": "Divide Curve",
+      "compGuid": "2162e72e",
+      "instanceGuid": "d417feab"
+    },
+    "6b459e0c": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "6b459e0c"
+    },
+    "1c6bc966": {
+      "name": "Number Slider",
+      "compGuid": "57da07bd",
+      "instanceGuid": "1c6bc966"
+    },
+    "48e825b7": {
+      "name": "Tree Statistics",
+      "compGuid": "99bee19d",
+      "instanceGuid": "48e825b7"
+    },
+    "26688505": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "26688505"
+    },
+    "e345d40f": {
+      "name": "Dispatch",
+      "compGuid": "d8332545",
+      "instanceGuid": "e345d40f"
+    },
+    "fcf09fd2": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "fcf09fd2"
+    },
+    "d3873ecf": {
+      "name": "Tree Branch",
+      "compGuid": "3a710c1e",
+      "instanceGuid": "d3873ecf"
+    },
+    "1eb901d4": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "1eb901d4"
+    },
+    "8a804777": {
+      "name": "Tree Branch",
+      "compGuid": "3a710c1e",
+      "instanceGuid": "8a804777"
+    },
+    "4f2806f4": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "4f2806f4"
+    },
+    "53389bfb": {
+      "name": "Loft",
+      "compGuid": "a7a41d0a",
+      "instanceGuid": "53389bfb"
+    },
+    "4bc99a7b": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "4bc99a7b"
+    },
+    "e2dd5931": {
+      "name": "Flip Matrix",
+      "compGuid": "41aa4112",
+      "instanceGuid": "e2dd5931"
+    },
+    "68a351b3": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "68a351b3"
+    },
+    "5348f8fb": {
+      "name": "Tree Branch",
+      "compGuid": "3a710c1e",
+      "instanceGuid": "5348f8fb"
+    },
+    "572b3bda": {
+      "name": "Tree Branch",
+      "compGuid": "3a710c1e",
+      "instanceGuid": "572b3bda"
+    },
+    "3720f585": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "3720f585"
+    },
+    "899be32e": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "899be32e"
+    },
+    "1c2dd418": {
+      "name": "Tree Statistics",
+      "compGuid": "99bee19d",
+      "instanceGuid": "1c2dd418"
+    },
+    "e44ae09c": {
+      "name": "Dispatch",
+      "compGuid": "d8332545",
+      "instanceGuid": "e44ae09c"
+    },
+    "b388e668": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "b388e668"
+    },
+    "5a022375": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "5a022375"
+    },
+    "a24afb59": {
+      "name": "Interpolate",
+      "compGuid": "2b2a4145",
+      "instanceGuid": "a24afb59"
+    },
+    "1b874a67": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "1b874a67"
+    },
+    "286870f4": {
+      "name": "Interpolate",
+      "compGuid": "2b2a4145",
+      "instanceGuid": "286870f4"
+    },
+    "dfbb4bcf": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "dfbb4bcf"
+    },
+    "3e79b807": {
+      "name": "Brep Closest Point",
+      "compGuid": "4beead95",
+      "instanceGuid": "3e79b807"
+    },
+    "a4f426c3": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "a4f426c3"
+    },
+    "c749e5d3": {
+      "name": "Brep Closest Point",
+      "compGuid": "4beead95",
+      "instanceGuid": "c749e5d3"
+    },
+    "35b9176f": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "35b9176f"
+    },
+    "3c47ac0d": {
+      "name": "Move",
+      "compGuid": "e9eb1dcf",
+      "instanceGuid": "3c47ac0d"
+    },
+    "03845aff": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "03845aff"
+    },
+    "8a60384c": {
+      "name": "Amplitude",
+      "compGuid": "6ec39468",
+      "instanceGuid": "8a60384c"
+    },
+    "d1890919": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "d1890919"
+    },
+    "f0a3abd5": {
+      "name": "Panel",
+      "compGuid": "59e0b89a",
+      "instanceGuid": "f0a3abd5"
+    },
+    "d1dd5b87": {
+      "name": "Duplicate Data",
+      "compGuid": "dd8134c0",
+      "instanceGuid": "d1dd5b87"
+    },
+    "fedcfdf4": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "fedcfdf4"
+    },
+    "a9261e50": {
+      "name": "Division",
+      "compGuid": "9c85271f",
+      "instanceGuid": "a9261e50"
+    },
+    "57476be7": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "57476be7"
+    },
+    "3e8b43d3": {
+      "name": "Multiplication",
+      "compGuid": "ce46b74e",
+      "instanceGuid": "3e8b43d3"
+    },
+    "e20444e5": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "e20444e5"
+    },
+    "ab55e560": {
+      "name": "Number Slider",
+      "compGuid": "57da07bd",
+      "instanceGuid": "ab55e560"
+    },
+    "929755f8": {
+      "name": "Interpolate",
+      "compGuid": "2b2a4145",
+      "instanceGuid": "929755f8"
+    },
+    "46907480": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "46907480"
+    },
+    "03c62523": {
+      "name": "Boolean Toggle",
+      "compGuid": "2e78987b",
+      "instanceGuid": "03c62523"
+    },
+    "f9d89ddb": {
+      "name": "Deconstruct Vector",
+      "compGuid": "a50fcd4a",
+      "instanceGuid": "f9d89ddb"
+    },
+    "3ecd10f4": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "3ecd10f4"
+    },
+    "1ed0ae3b": {
+      "name": "Vector XYZ",
+      "compGuid": "56b92eab",
+      "instanceGuid": "1ed0ae3b"
+    },
+    "3afd9dde": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "3afd9dde"
+    },
+    "fe8461ea": {
+      "name": "Move",
+      "compGuid": "e9eb1dcf",
+      "instanceGuid": "fe8461ea"
+    },
+    "463e399c": {
+      "name": "Amplitude",
+      "compGuid": "6ec39468",
+      "instanceGuid": "463e399c"
+    },
+    "176444a3": {
+      "name": "Multiplication",
+      "compGuid": "ce46b74e",
+      "instanceGuid": "176444a3"
+    },
+    "575b45b2": {
+      "name": "Interpolate",
+      "compGuid": "2b2a4145",
+      "instanceGuid": "575b45b2"
+    },
+    "16ca6456": {
+      "name": "Deconstruct Vector",
+      "compGuid": "a50fcd4a",
+      "instanceGuid": "16ca6456"
+    },
+    "a0cf3d3b": {
+      "name": "Vector XYZ",
+      "compGuid": "56b92eab",
+      "instanceGuid": "a0cf3d3b"
+    },
+    "68ed75d0": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "68ed75d0"
+    },
+    "a666cceb": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "a666cceb"
+    },
+    "e4f56dc1": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "e4f56dc1"
+    },
+    "ecc17665": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "ecc17665"
+    },
+    "422d0ba4": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "422d0ba4"
+    },
+    "39a1f766": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "39a1f766"
+    },
+    "98111dae": {
+      "name": "Panel",
+      "compGuid": "59e0b89a",
+      "instanceGuid": "98111dae"
+    },
+    "1845ab8c": {
+      "name": "MeshPipe",
+      "compGuid": "3718d679",
+      "instanceGuid": "1845ab8c"
+    },
+    "0f7dbf35": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "0f7dbf35"
+    },
+    "ca4fd874": {
+      "name": "MeshPipe",
+      "compGuid": "3718d679",
+      "instanceGuid": "ca4fd874"
+    },
+    "3c39a7f0": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "3c39a7f0"
+    },
+    "6f8db602": {
+      "name": "Panel",
+      "compGuid": "59e0b89a",
+      "instanceGuid": "6f8db602"
+    },
+    "f8b9e2af": {
+      "name": "Panel",
+      "compGuid": "59e0b89a",
+      "instanceGuid": "f8b9e2af"
+    },
+    "a51bbdba": {
+      "name": "Panel",
+      "compGuid": "59e0b89a",
+      "instanceGuid": "a51bbdba"
+    },
+    "18dce464": {
+      "name": "Mesh Colours",
+      "compGuid": "d2cedf38",
+      "instanceGuid": "18dce464"
+    },
+    "f07f397e": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "f07f397e"
+    },
+    "18009e58": {
+      "name": "List Length",
+      "compGuid": "1817fd29",
+      "instanceGuid": "18009e58"
+    },
+    "faedb20a": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "faedb20a"
+    },
+    "27c216c5": {
+      "name": "Series",
+      "compGuid": "e64c5fb1",
+      "instanceGuid": "27c216c5"
+    },
+    "9beec8bb": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "9beec8bb"
+    },
+    "5fb07658": {
+      "name": "List Item",
+      "compGuid": "59daf374",
+      "instanceGuid": "5fb07658"
+    },
+    "c08ee561": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "c08ee561"
+    },
+    "5695e232": {
+      "name": "Gradient",
+      "compGuid": "6da9f120",
+      "instanceGuid": "5695e232"
+    },
+    "c8f8b97e": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "c8f8b97e"
+    },
+    "0783a522": {
+      "name": "Mesh Colours",
+      "compGuid": "d2cedf38",
+      "instanceGuid": "0783a522"
+    },
+    "d17f6775": {
+      "name": "List Length",
+      "compGuid": "1817fd29",
+      "instanceGuid": "d17f6775"
+    },
+    "c8657f7d": {
+      "name": "Series",
+      "compGuid": "e64c5fb1",
+      "instanceGuid": "c8657f7d"
+    },
+    "391faee1": {
+      "name": "List Item",
+      "compGuid": "59daf374",
+      "instanceGuid": "391faee1"
+    },
+    "f4e0f624": {
+      "name": "Gradient",
+      "compGuid": "6da9f120",
+      "instanceGuid": "f4e0f624"
+    },
+    "74dcbd34": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "74dcbd34"
+    },
+    "0da93166": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "0da93166"
+    },
+    "a731af4f": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "a731af4f"
+    },
+    "ccd85bc0": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "ccd85bc0"
+    },
+    "d06a761b": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "d06a761b"
+    },
+    "064c7040": {
+      "name": "Merge",
+      "compGuid": "3cadddef",
+      "instanceGuid": "064c7040"
+    },
+    "0cee321d": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "0cee321d"
+    },
+    "3787ae79": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "3787ae79"
+    },
+    "2fdceadd": {
+      "name": "Gradient",
+      "compGuid": "6da9f120",
+      "instanceGuid": "2fdceadd"
+    },
+    "d3800c27": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "d3800c27"
+    },
+    "0cd2757d": {
+      "name": "Gradient",
+      "compGuid": "6da9f120",
+      "instanceGuid": "0cd2757d"
+    },
+    "3a98d768": {
+      "name": "Group",
+      "compGuid": "c552a431",
+      "instanceGuid": "3a98d768"
+    },
+    "e78557b0": {
+      "name": "Sketch",
+      "compGuid": "2844fec5",
+      "instanceGuid": "e78557b0"
+    }
+  },
+  "wires": []
+}
