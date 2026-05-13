@@ -2,11 +2,11 @@
 
 **AI Agent 驱动的 Grasshopper 桥接插件 — 让大语言模型直接在 GH 画布上生成、连线、求解电池组。**
 
-gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP 服务端。AI Agent 通过 25+ 个 RESTful 指令动态创建组件、连线、布位、触发求解，实现从自然语言到参数化模型的全自动链路。
+gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP 服务端。AI Agent 通过 30+ 个 RESTful 指令动态创建组件、连线、布位、触发求解，实现从自然语言到参数化模型的全自动链路。
 
 配合 Rhino.Inside.Revit（RIR），可将生成的几何直接推入 Revit 文档。
 
-> **当前稳定版本**：基于 2026-05-09 备份恢复，所有功能已验证通过。
+> **当前稳定版本**：基于 2026-05-09 备份恢复，持续迭代至 2026-05-13。所有功能已验证。
 
 ## 架构
 
@@ -64,9 +64,15 @@ gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP �
 ### 构建与连线
 | 指令 | 用途 |
 |------|------|
-| `build` | 创建组件、连线（支持名称、端口名、自动布局、async） |
-| `wire` | 分步连线（支持端口名、用完整 InstanceGuid） |
-| `set` | 设置组件内部参数（Domain、Expression、Branch路径等） |
+| `build` | 创建组件、连线（支持名称、端口名、自动布局、async、箭头语法） |
+| `wire` | 分步连线（支持端口名、完整 InstanceGuid） |
+| `set` | 设置组件内部参数 |
+| `setval` | 远程修改 Number Slider 数值 |
+| `cycle` | 批量求解（`full=true` 全量重算，默认 false） |
+| `remove` | 删除指定组件 |
+| `disconnect` | 断开连线 |
+| `move` | 移动组件位置 |
+| `tidy` | 拓扑排序整理画布 |
 
 ### 诊断与验证
 | 指令 | 用途 |
@@ -80,9 +86,10 @@ gh-bridge 是一个 Grasshopper GHA 插件，在 GH 画布上嵌入一个 HTTP �
 | 指令 | 用途 |
 |------|------|
 | `bake` | 烘焙 GH 输出到 Rhino 文档 |
-| `screenshot` | 截取 Rhino 视图存为 PNG |
+| `screenshot` | 截取 Rhino 视图存为 PNG（使用 `-_ViewCaptureToFile` 避免白屏） |
+| `redraw` | 强制刷新 Rhino 视口 |
 | `query` | 查询 Rhino 对象列表 |
-| `loadgh` | 分析 .gh 文件依赖 |
+| `readfile` | 解析二进制 .gh 文件，提取组件+GUID+连线拓扑 |
 
 ### Revit 集成
 | 指令 | 用途 |
@@ -142,10 +149,11 @@ copy deploy\HanakoBridge.dll %APPDATA%\Grasshopper\Libraries\
 
 ## 已知限制
 
-- **清空含 RIR 组件的画布会触发 Revit 弹窗**：使用 `revit-dialog-closer.sh` 关闭
-- **4Point Surface 四点共面时会生成退化面**：至少两个角的 Z 值设为非零
-- **异步模式下 ping 轮询获取 build 结果**
-- **wire 指令用 InstanceGuid（36字符），不是 build 返回的 id**
+- **清空含 RIR 组件的画布会触发 Revit 弹窗**
+- **跨 session 后 `_idMap` 失效**：wire 必须用完整 36 位 InstanceGuid
+- **PipeSurface 在 RIR 中不产 Brep**：用 Extrude 或 MeshPipe+MeshToPolysurface 替代
+- **MeshPipe 无法程序化新建**：需用户手动拖入或从 .gh 文件获取
+- **wire 指令用 InstanceGuid（36字符），不是 8 位前缀**
 
 ## 项目结构
 
