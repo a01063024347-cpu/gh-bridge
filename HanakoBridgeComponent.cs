@@ -478,8 +478,14 @@ namespace HanakoBridge
                         _idMap[kv.Key] = obj.InstanceGuid;
                     } catch { }
                 }
-                // 跨批次连线：标记全部组件为 dirty，强制下一轮解算传播数据
-                try { doc.ExpireSolution(); } catch { }
+                // 异步批量求解：梯度间隔让数据逐层传播
+                try {
+                    doc.ExpireSolution();
+                    for (int i = 0; i < 8; i++) {
+                        int ii = i;
+                        doc.ScheduleSolution(1 + ii * 2, (d) => { try { d.NewSolution(false); } catch { } });
+                    }
+                } catch { }
                 return _json.Serialize(new { result = "built:" + created.Count + " comps", components = idMap });
             } catch (Exception ex) { return "build err:" + ex.Message; }
         }
